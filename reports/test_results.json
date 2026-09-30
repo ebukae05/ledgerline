@@ -1,0 +1,44 @@
+{
+  "model_version": "lgbm-5697035084",
+  "evaluated_at": "2026-09-30T23:34:36+00:00",
+  "split": "test",
+  "test_days": [
+    152,
+    182
+  ],
+  "models": {
+    "rules": {
+      "n": 88581,
+      "fraud_rate": 0.03480430340592226,
+      "pr_auc": 0.09614505440130337,
+      "roc_auc": 0.7169123640929869,
+      "recall_at_1pct_fpr": 0.02627311060655206,
+      "precision_at_top_1pct": 0.17365400063405645
+    },
+    "logistic_regression": {
+      "n": 88581,
+      "fraud_rate": 0.03480430340592226,
+      "pr_auc": 0.14296381457794347,
+      "roc_auc": 0.7489197896763543,
+      "recall_at_1pct_fpr": 0.1132014271813169,
+      "precision_at_top_1pct": 0.3126410835214447
+    },
+    "lgbm": {
+      "n": 88581,
+      "fraud_rate": 0.03480430340592226,
+      "pr_auc": 0.5606792342303182,
+      "roc_auc": 0.9031694538541006,
+      "recall_at_1pct_fpr": 0.4836198507946805,
+      "precision_at_top_1pct": 0.8950338600451467
+    }
+  },
+  "operating_point": {
+    "threshold": 0.026810642282923656,
+    "flag_rate": 0.031982027748614264,
+    "fpr": 0.014397997613979275,
+    "recall": 0.5196237431073629,
+    "precision": 0.5654782915637134,
+    "fraud_dollars_caught_share": 0.45485793261404645,
+    "fraud_dollars_per_1000_flags": 75398.92728556301
+  }
+}

@@ -7,6 +7,7 @@ from ledgerline.eval.metrics import (
     recall_at_fpr,
     report,
     roc_auc,
+    threshold_at_fpr,
 )
 
 # 2 fraud among 10. Ranked by score: F, L, F, L, L, L, L, L, L, L
@@ -95,3 +96,37 @@ def test_bad_fractions_are_rejected():
         recall_at_fpr(Y, S, 1.5)
     with pytest.raises(ValueError, match="top_frac"):
         precision_at_top(Y, S, 0.0)
+
+
+def test_threshold_at_fpr_by_hand():
+    # 0 of 8 legit allowed: cut at the rank-1 fraud (0.9). 1 of 8: down to rank 3 (0.7).
+    assert threshold_at_fpr(Y, S, 0.0) == 0.9
+    assert threshold_at_fpr(Y, S, 0.125) == 0.7
+
+
+def test_threshold_at_fpr_matches_recall_at_fpr():
+    rng = np.random.default_rng(0)
+    y = rng.integers(0, 2, 500)
+    s = rng.random(500) + y * 0.3
+    t = threshold_at_fpr(y, s, 0.05)
+    flagged = s >= t
+
+    assert flagged[y == 0].mean() <= 0.05
+    assert flagged[y == 1].mean() == recall_at_fpr(y, s, 0.05)
+
+
+def test_operating_point_by_hand():
+    from ledgerline.evaluate import operating_point
+
+    y = np.array([1, 0, 1, 0])
+    s = np.array([0.9, 0.8, 0.2, 0.1])
+    amounts = np.array([100.0, 50.0, 300.0, 20.0])
+
+    op = operating_point(y, s, amounts, threshold=0.5)
+
+    assert op["flag_rate"] == 0.5
+    assert op["fpr"] == 0.5
+    assert op["recall"] == 0.5
+    assert op["precision"] == 0.5
+    assert op["fraud_dollars_caught_share"] == 0.25  # $100 of $400
+    assert op["fraud_dollars_per_1000_flags"] == 50_000.0  # $100 over 2 flags

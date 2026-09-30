@@ -57,6 +57,19 @@ def recall_at_fpr(y_true, scores, max_fpr: float = 0.01) -> float:
     return float(tpr[fpr <= max_fpr].max())
 
 
+def threshold_at_fpr(y_true, scores, max_fpr: float = 0.01) -> float:
+    """Lowest score cutoff that flags at most `max_fpr` of legit transactions.
+
+    Flag a transaction when score >= the returned value. Pick this on
+    validation, then apply it unchanged to test and production traffic.
+    """
+    if not 0 <= max_fpr <= 1:
+        raise ValueError(f"max_fpr must be between 0 and 1, got {max_fpr}")
+    y, s = _check(y_true, scores)
+    fpr, _, thresholds = roc_curve(y, s, drop_intermediate=False)
+    return float(thresholds[fpr <= max_fpr].min())
+
+
 def precision_at_top(y_true, scores, top_frac: float = 0.01) -> float:
     """Share of the riskiest `top_frac` of transactions that are actually fraud.
 

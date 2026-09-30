@@ -33,10 +33,71 @@ From [`notebooks/01_data_exploration.ipynb`](notebooks/01_data_exploration.ipynb
 
 ## Results
 
-Baselines on the **validation** split (88,581 transactions, 3.43% fraud). Reproduce with `python -m ledgerline.baselines`; the numbers are saved to [`reports/baselines_val.json`](reports/baselines_val.json). Test-set numbers come once, at the end of Phase 3.
+**Headline: at a 1% false-positive rate, the model catches 48% of fraud on held-out future data, vs 3% for hand-written rules and 11% for logistic regression.**
+
+### Test set (days 152–182, evaluated once)
+
+88,581 transactions the model never saw, all later in time than anything used for training or tuning. Evaluated a single time, after every choice was locked in; see [`reports/test_results.json`](reports/test_results.json).
 
 | Model | PR-AUC | ROC-AUC | Recall @ 1% FPR | Precision @ top 1% |
 |---|---|---|---|---|
-| Random guessing | 0.034 | 0.500 | 1.0% | 3.4% |
-| Rules (6 hand-written checks) | 0.080 | 0.708 | 2.3% | 13.1% |
-| Logistic regression | 0.172 | 0.757 | 12.8% | 34.9% |
+| Random guessing | 0.035 | 0.500 | 1.0% | 3.5% |
+| Rules (6 hand-written checks) | 0.096 | 0.717 | 2.6% | 17.4% |
+| Logistic regression (9 features) | 0.143 | 0.749 | 11.3% | 31.3% |
+| **LightGBM** (455 features, class-weighted) | **0.561** | **0.903** | **48.4%** | **89.5%** |
+
+**At the deployed threshold** (picked on validation to flag at most 1% of legit transactions): on test it flagged 3.2% of transactions, caught **52% of fraud** and **45% of fraud dollars**, and 57% of flags were real fraud. It also wrongly flagged 1.44% of legit customers, above the 1% target. Score distributions drift over time, so a threshold set last month won't hold exactly this month; production would monitor and re-tune it.
+
+Test is lower than validation (PR-AUC 0.561 vs 0.652). That's expected: validation chose the configuration, the tree count and the threshold, so it's slightly optimistic, and test is further in the future.
+
+### How the model got there (validation, days 120–152)
+
+Every LightGBM row is a mean over 2–3 random seeds; ± is the spread across seeds. Differences smaller than that spread are noise. Reproduce with `python -m ledgerline.experiments`; results in [`reports/experiments_val.json`](reports/experiments_val.json).
+
+| Model | PR-AUC | Recall @ 1% FPR | Precision @ top 1% |
+|---|---|---|---|
+| Rules | 0.080 | 2.3% | 13.1% |
+| Logistic regression | 0.172 | 12.8% | 34.9% |
+| LightGBM, basic features (9) | 0.198 ± 0.003 | 15.7% | 40.6% |
+| LightGBM + history features (25) | 0.238 ± 0.004 | 17.3% | 44.9% |
+| LightGBM + dataset's own columns (439) | 0.641 ± 0.002 | 55.9% | 94.5% |
+| LightGBM + history + dataset columns (455) | 0.643 ± 0.002 | 55.4% | 94.5% |
+| …same, class-weighted (final model, 1 seed) | 0.652 | 57.3% | 94.7% |
+
+- **History features** (per-card velocity, time since previous, amount vs card average, device/email seen before) add +0.040 PR-AUC over basic features, 10× the seed noise.
+- **On top of the dataset's own columns they add nothing measurable** (+0.002, within noise). Those columns (C counts, D time gaps, V engineered features) already encode card history. History features stay in the model because they give human-readable reasons for a flag, which the anonymous V columns can't.
+- **Class weighting** (`scale_pos_weight`) added +0.009 PR-AUC and +1.9 points of recall in a single run.
+
+### Which history feature helped most (ablation)
+
+Each group removed from the basic + history model, 3 seeds each:
+
+| Removed | PR-AUC change |
+|---|---|
+| All history features | −0.040 |
+| **Everything keyed on the card+address key** | **−0.022** |
+| Time since previous transaction | −0.009 |
+| Amount vs card average | −0.007 |
+| Velocity counts (1h / 24h / 7d) | −0.007 |
+| Card-level prior count | −0.006 |
+| Card-level key (`card1` only) | −0.004 |
+| Device/email seen before | −0.001 (noise) |
+
+The card+address key is the most valuable single idea. LightGBM's own importance ranks `card_n_prior` first, yet removing it costs little: correlated features stand in for it. Importance shows what a model *used*; ablation shows what it *needed*.
+
+## How I validated this
+
+- **Time-based split, no shuffling.** Train days 1–120, validation 120–152, test 152–182. A test proves every validation/test transaction is strictly later than every training one.
+- **No feature sees the future.** History features only use transactions with an earlier timestamp for the same card. Tests delete all data after a cutoff and check that no earlier feature changes, and edit a later transaction and check that nothing earlier moves.
+- **The card+address key.** The data has no customer ID. `card1` + `addr1` + first-use day (`day − D1`, since D1 counts days since the card's first transaction) stands in for one; only 3,112 of its 217,850 groups mix fraud and legit. Past fraud labels are never used as features.
+- **Test set touched once.** `python -m ledgerline.evaluate` refuses to run a second time without `--force` and records the model version it scored.
+- **Reproducible.** Pinned library versions, fixed seeds, deterministic LightGBM. Retraining gives a bit-identical model; the model version is a hash of its trees.
+
+## Reproduce
+
+```bash
+python -m ledgerline.baselines     # rules + logistic regression, validation
+python -m ledgerline.experiments   # all model variants + ablation (~1 hour)
+python -m ledgerline.train         # final model -> artifacts/models/<version>/
+python -m ledgerline.evaluate      # test set, once
+```
