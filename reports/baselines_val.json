@@ -1,0 +1,23 @@
+{
+  "split": "validation",
+  "rules": {
+    "n": 88581,
+    "fraud_rate": 0.03434145019812375,
+    "pr_auc": 0.08012992861251904,
+    "roc_auc": 0.7077747654373971,
+    "recall_at_1pct_fpr": 0.023011176857330704,
+    "precision_at_top_1pct": 0.13112654294395718,
+    "high_amount_cutoff": 500.0,
+    "risky_email_domains": [
+      "outlook.com"
+    ]
+  },
+  "logistic_regression": {
+    "n": 88581,
+    "fraud_rate": 0.03434145019812375,
+    "pr_auc": 0.17180909817442822,
+    "roc_auc": 0.756564128497039,
+    "recall_at_1pct_fpr": 0.12787639710716633,
+    "precision_at_top_1pct": 0.34875846501128666
+  }
+}

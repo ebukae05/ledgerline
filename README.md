@@ -33,4 +33,10 @@ From [`notebooks/01_data_exploration.ipynb`](notebooks/01_data_exploration.ipynb
 
 ## Results
 
-_Coming in Phase 3._
+Baselines on the **validation** split (88,581 transactions, 3.43% fraud). Reproduce with `python -m ledgerline.baselines`; the numbers are saved to [`reports/baselines_val.json`](reports/baselines_val.json). Test-set numbers come once, at the end of Phase 3.
+
+| Model | PR-AUC | ROC-AUC | Recall @ 1% FPR | Precision @ top 1% |
+|---|---|---|---|---|
+| Random guessing | 0.034 | 0.500 | 1.0% | 3.4% |
+| Rules (6 hand-written checks) | 0.080 | 0.708 | 2.3% | 13.1% |
+| Logistic regression | 0.172 | 0.757 | 12.8% | 34.9% |

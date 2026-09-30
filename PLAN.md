@@ -279,3 +279,5 @@ Compare three approaches on the same test sets:
 | Date | Phase | What changed | Metric(s) | Notes |
 |---|---|---|---|---|
 | 2026-09-30 | 1 | Loader (CSV → joined Parquet cache) + time split 70/15/15 | 590,540 rows, 3.50% fraud; train/val/test fraud 3.52% / 3.43% / 3.48% | CSV load 11s, cache 0.4s. Split cutoffs are timestamps, so no timestamp straddles two splits |
+| 2026-09-30 | 2 | Rules baseline (6 yes/no rules, score = count fired; risky domains from train, amount cutoff $500 tuned on val) | Val: PR-AUC 0.080, ROC-AUC 0.708, recall @ 1% FPR 2.3%, precision @ top 1% 13.1% | Coarse steps: ≥3 rules = 3.3% FPR (over budget), ≥4 = 0.5% FPR, so recall collapses at 1% FPR |
+| 2026-09-30 | 2 | Logistic regression on 9 per-row features (product, card, device, email, hour, log amount, has identity, odd cents) | Val: PR-AUC 0.172, ROC-AUC 0.757, recall @ 1% FPR 12.8%, precision @ top 1% 34.9% | 2.1× rules PR-AUC. Two runs gave identical numbers. `python -m ledgerline.baselines` |

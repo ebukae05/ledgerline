@@ -7,10 +7,10 @@ repos:
         entry: ruff check --fix
         language: python
         additional_dependencies: [ruff==0.16.9]
-        types: [python]
+        types_or: [python, jupyter]
       - id: ruff-format
         name: ruff format
         entry: ruff format
         language: python
         additional_dependencies: [ruff==0.16.9]
-        types: [python]
+        types_or: [python, jupyter]
