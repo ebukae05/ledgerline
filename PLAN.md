@@ -278,4 +278,4 @@ Compare three approaches on the same test sets:
 
 | Date | Phase | What changed | Metric(s) | Notes |
 |---|---|---|---|---|
-| | | | | |
+| 2026-09-30 | 1 | Loader (CSV → joined Parquet cache) + time split 70/15/15 | 590,540 rows, 3.50% fraud; train/val/test fraud 3.52% / 3.43% / 3.48% | CSV load 11s, cache 0.4s. Split cutoffs are timestamps, so no timestamp straddles two splits |

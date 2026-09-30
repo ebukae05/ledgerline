@@ -1,7 +1,16 @@
+# Keep the ruff version here in sync with pyproject.toml so the hook and CI agree.
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
+  - repo: local
     hooks:
-      - id: ruff
-        args: [--fix]
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check --fix
+        language: python
+        additional_dependencies: [ruff==0.16.9]
+        types: [python]
       - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: python
+        additional_dependencies: [ruff==0.16.9]
+        types: [python]

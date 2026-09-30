@@ -8,13 +8,23 @@ version = "0.1.0"
 description = "Card transaction fraud scoring and merchant descriptor categorization, served through a tested API."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "polars==1.44.2",
+    "pyarrow==25.0.1",
+]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8",
-    "ruff>=0.6",
-    "pre-commit>=3.7",
+    "pytest==9.1.1",
+    "ruff==0.16.9",
+    "pre-commit==4.6.2",
+]
+notebooks = [
+    "ipykernel==7.4.0",
+    "matplotlib==3.11.2",
+    "nbconvert==7.17.1",
+    "nbformat==5.11.1",
+    "numpy==2.5.3",
 ]
 
 [tool.hatch.build.targets.wheel]
