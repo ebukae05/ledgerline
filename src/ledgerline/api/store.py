@@ -7,7 +7,7 @@ quick local runs; it is never used when DATABASE_URL is set.
 import hashlib
 import json
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 import polars as pl
@@ -90,6 +90,7 @@ class Store(Protocol):
     def add_transaction(self, tx: dict) -> None: ...
     def record(self, decision: dict) -> None: ...
     def healthy(self) -> bool: ...
+    def merchant_methods(self, since_minutes: int) -> dict[str, int]: ...
 
 
 class MemoryStore:
@@ -116,6 +117,16 @@ class MemoryStore:
 
     def healthy(self) -> bool:
         return not self.fail_writes
+
+    def merchant_methods(self, since_minutes: int) -> dict[str, int]:
+        cutoff = datetime.now(UTC) - timedelta(minutes=since_minutes)
+        counts: dict[str, int] = {}
+        with self._lock:
+            for d in self.decisions:
+                if d["endpoint"] == "/merchant" and d["created_at"] >= cutoff:
+                    method = d["output"]["method"]
+                    counts[method] = counts.get(method, 0) + 1
+        return counts
 
 
 class PostgresStore:
@@ -171,6 +182,16 @@ class PostgresStore:
             return True
         except Exception:
             return False
+
+    def merchant_methods(self, since_minutes: int) -> dict[str, int]:
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                "SELECT output->>'method', count(*) FROM decisions "
+                "WHERE endpoint = '/merchant' AND created_at > now() - make_interval(mins => %s) "
+                "GROUP BY 1",
+                (since_minutes,),
+            ).fetchall()
+        return {method: n for method, n in rows}
 
     def seed(self, df: pl.DataFrame, batch: int = 50_000) -> int:
         """Bulk-load past transactions (history only) with COPY. Skips existing IDs."""

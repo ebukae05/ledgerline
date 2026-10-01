@@ -45,7 +45,8 @@ from ledgerline.models.registry import MODELS_DIR, load_model
 
 log = logging.getLogger("ledgerline.api")
 
-LLM_TIMEOUT_MS = 5_000
+# Gemini rejects deadlines under 10 s (400 INVALID_ARGUMENT).
+LLM_TIMEOUT_MS = 10_000
 
 
 class StartupError(RuntimeError):
@@ -80,8 +81,8 @@ class MerchantService:
                 category = self.llm.predict([text])[0]
                 if category:
                     return MerchantResponse(category=category, confidence=None, method="llm")
-            except Exception:  # timeout, quota, outage: fall back, don't fail the request
-                log.warning("merchant LLM failed; falling back to TF-IDF", exc_info=True)
+            except Exception as error:  # timeout, quota, outage: fall back, don't fail
+                log.warning("merchant LLM failed (%s); falling back to TF-IDF", error)
         labels, confidence = tfidf.predict_with_confidence(self.model, [text])
         return MerchantResponse(category=labels[0], confidence=float(confidence[0]), method="tfidf")
 
@@ -263,12 +264,20 @@ def create_app(
     @app.get("/health", response_model=Health)
     def health():
         database = store.healthy()
+        # From the audit log, so it covers every worker and survives restarts.
+        # With the LLM enabled, TF-IDF answers mean the LLM failed: a fallback
+        # keeps requests working but can hide a broken setup.
+        try:
+            recent = store.merchant_methods(since_minutes=60) if database else {}
+        except Exception:
+            recent = {}
         body = Health(
             status="ok" if database else "degraded",
             model_loaded=True,
             model_version=scorer.version,
             database=database,
             merchant_llm=merchant.llm is not None,
+            merchant_last_hour=recent,
         )
         return JSONResponse(status_code=200 if database else 503, content=body.model_dump())
 

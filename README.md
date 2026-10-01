@@ -1,43 +1,54 @@
 # Ledgerline
 
+[![CI](https://github.com/ebukae05/ledgerline/actions/workflows/ci.yml/badge.svg)](https://github.com/ebukae05/ledgerline/actions/workflows/ci.yml)
+
 Scores card transactions for fraud, turns messy bank descriptors into clean merchant categories, and serves both through a tested API, with every claim backed by a measured number.
 
-> See [PLAN.md](PLAN.md) for the roadmap and the full results log.
+| | Result | Compared with |
+|---|---|---|
+| **Fraud detection** | **48% of fraud caught** at a 1% false-positive rate, on held-out future transactions | 3% for hand-written rules, 11% for logistic regression |
+| **Merchant categories** | **92% accuracy on merchants never seen in training**, 86% on my own bank transactions, $0.02 per 1,000 | 60% for TF-IDF, 51% for rules |
+| **Serving** | **29 ms p50**, 63 requests/s per instance, every decision audited | API scores match offline evaluation to within 1e-9 |
 
-## Setup
+Built on the [IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection) data (590,540 real e-commerce transactions, 3.5% fraud) and [a synthetic bank-descriptor dataset](https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2) checked against my own Bank of America transactions. 135 tests; CI runs lint, tests against a real Postgres, and a Docker build on every push.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[dev,notebooks]"
-pre-commit install
-pytest
+**Contents:** [Architecture](#architecture) · [Fraud model](#fraud-model) · [Merchant categorization](#merchant-categorization) · [API](#api) · [How I validated this](#how-i-validated-this) · [Limitations and next steps](#limitations-and-next-steps) · [Run it](#run-it) · [Development](#development)
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph offline["Offline (python -m ...)"]
+        raw[(Kaggle CSVs)] --> load[load + time split<br/>70/15/15 by time]
+        load --> feats[add_features<br/>basic + history]
+        feats --> train[LightGBM<br/>train / validate]
+        train --> reg[(Model registry<br/>artifacts/models/HASH)]
+        train -. test set, once .-> report[reports/*.json]
+        desc[(Descriptor dataset)] --> mtrain[TF-IDF train] --> reg
+    end
+
+    subgraph online["Online (Docker Compose)"]
+        client([Client]) -->|POST /score| api[FastAPI<br/>schema validation]
+        api -->|earlier txns for card| pg[(Postgres<br/>transactions)]
+        api --> sf[same feature<br/>functions] --> model[pinned model<br/>+ reasons if flagged]
+        model --> audit[(Postgres<br/>decisions audit log)]
+        client -->|POST /merchant| m{Gemini}
+        m -->|timeout / error| tf[TF-IDF fallback]
+        m --> audit
+        tf --> audit
+    end
+
+    reg -->|MODEL_VERSION| model
+    feats -. same code .- sf
 ```
 
-## Data
+The key property: **training and serving share one feature implementation.** The API fetches a card's earlier transactions from Postgres and runs the same `basic_features` / `history_features` functions used in training, and a parity test proves the scores match.
 
-Download the [IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection) data from Kaggle (accept the competition rules first) and put the CSVs in `data/raw/`. The `data/` folder is gitignored.
-
-## Data findings
-
-From [`notebooks/01_data_exploration.ipynb`](notebooks/01_data_exploration.ipynb), on the 590,540 labeled training transactions.
-
-1. **3.50% of transactions are fraud.** Always predicting "not fraud" scores 96.5% accuracy while catching nothing, so accuracy is not a usable metric here.
-2. **The data spans 182 days, and fraud drifts week to week** (1.85% to 5.06%). The time-based split puts days 1–120 in train (413,378 rows), days 120–152 in validation (88,581) and days 152–182 in test (88,581). Each split ends up with 3.4–3.5% fraud.
-3. **Volume doubles around days 20–25** (peak 6,852 transactions/day vs a median of 3,050), and fraud rate hits its lowest point in the same week. A model trained on that stretch sees an unusually "clean" period.
-4. **Amount alone barely separates fraud.** Median fraud is $75.00 vs $68.50 for legit, and the largest transactions are all legit (max fraud $5,191 vs $31,937). The $5–20 band is the exception: 8.3% fraud (2.4× average), holding 10% of all fraud.
-5. **Missingness is a signal.** Only 24% of transactions have an identity record, but those are 3.8× more likely to be fraud (7.9% vs 2.1%). 214 of 435 columns are more than half empty.
-6. **Product type matters most among simple columns.** ProductCD `C` is 11.7% fraud vs 2.0% for `W` (5.8×). Mobile devices (10.2%) and credit cards (6.7% vs 2.4% for debit) are also elevated.
-7. **Email domain varies:** outlook.com is 9.5% fraud vs 4.4% for gmail.com (among domains with 2,000+ transactions).
-8. **Quiet hours are riskier.** The two lowest-volume hours of the (shifted) day run about 10% fraud vs about 2.3% in the busiest hours. The reference time is hidden, so these aren't known clock hours.
-
-## Results
-
-**Headline: at a 1% false-positive rate, the model catches 48% of fraud on held-out future data, vs 3% for hand-written rules and 11% for logistic regression.**
+## Fraud model
 
 ### Test set (days 152–182, evaluated once)
 
-88,581 transactions the model never saw, all later in time than anything used for training or tuning. Evaluated a single time, after every choice was locked in; see [`reports/test_results.json`](reports/test_results.json).
+88,581 transactions the model never saw, all later in time than anything used for training or tuning. Evaluated a single time, after every choice was locked in ([`reports/test_results.json`](reports/test_results.json)).
 
 | Model | PR-AUC | ROC-AUC | Recall @ 1% FPR | Precision @ top 1% |
 |---|---|---|---|---|
@@ -46,13 +57,15 @@ From [`notebooks/01_data_exploration.ipynb`](notebooks/01_data_exploration.ipynb
 | Logistic regression (9 features) | 0.143 | 0.749 | 11.3% | 31.3% |
 | **LightGBM** (455 features, class-weighted) | **0.561** | **0.903** | **48.4%** | **89.5%** |
 
-**At the deployed threshold** (picked on validation to flag at most 1% of legit transactions): on test it flagged 3.2% of transactions, caught **52% of fraud** and **45% of fraud dollars**, and 57% of flags were real fraud. It also wrongly flagged 1.44% of legit customers, above the 1% target. Score distributions drift over time, so a threshold set last month won't hold exactly this month; production would monitor and re-tune it.
+**At the deployed threshold** (picked on validation to flag at most 1% of legit transactions): on test it flagged 3.2% of transactions, caught **52% of fraud** and **45% of fraud dollars**, and 57% of flags were real fraud. It also wrongly flagged 1.44% of legit customers, above the 1% target: score distributions drift, so a threshold set last month won't hold exactly this month.
 
-Test is lower than validation (PR-AUC 0.561 vs 0.652). That's expected: validation chose the configuration, the tree count and the threshold, so it's slightly optimistic, and test is further in the future.
+Test is lower than validation (PR-AUC 0.561 vs 0.652). That's expected: validation chose the configuration, tree count and threshold, so it's slightly optimistic, and test is further in the future.
+
+**Why recall at 1% FPR leads:** it's the question a fraud team asks ("if we can bother 1 in 100 good customers, how much fraud do we stop?"). Accuracy is useless here: predicting "not fraud" every time scores 96.5%.
 
 ### How the model got there (validation, days 120–152)
 
-Every LightGBM row is a mean over 2–3 random seeds; ± is the spread across seeds. Differences smaller than that spread are noise. Reproduce with `python -m ledgerline.experiments`; results in [`reports/experiments_val.json`](reports/experiments_val.json).
+Each LightGBM row is a mean over 2–3 random seeds; ± is the spread across seeds, and differences smaller than that are noise ([`reports/experiments_val.json`](reports/experiments_val.json)).
 
 | Model | PR-AUC | Recall @ 1% FPR | Precision @ top 1% |
 |---|---|---|---|
@@ -65,8 +78,8 @@ Every LightGBM row is a mean over 2–3 random seeds; ± is the spread across se
 | …same, class-weighted (final model, 1 seed) | 0.652 | 57.3% | 94.7% |
 
 - **History features** (per-card velocity, time since previous, amount vs card average, device/email seen before) add +0.040 PR-AUC over basic features, 10× the seed noise.
-- **On top of the dataset's own columns they add nothing measurable** (+0.002, within noise). Those columns (C counts, D time gaps, V engineered features) already encode card history. History features stay in the model because they give human-readable reasons for a flag, which the anonymous V columns can't.
-- **Class weighting** (`scale_pos_weight`) added +0.009 PR-AUC and +1.9 points of recall in a single run.
+- **On top of the dataset's own columns they add nothing measurable** (+0.002, within noise). Those columns (C counts, D time gaps, V engineered features) already encode card history. History features stay because they give human-readable reasons for a flag.
+- **Class weighting** (`scale_pos_weight`) added +0.009 PR-AUC and +1.9 points of recall (single run).
 
 ### Which history feature helped most (ablation)
 
@@ -83,13 +96,24 @@ Each group removed from the basic + history model, 3 seeds each:
 | Card-level key (`card1` only) | −0.004 |
 | Device/email seen before | −0.001 (noise) |
 
-The card+address key is the most valuable single idea. LightGBM's own importance ranks `card_n_prior` first, yet removing it costs little: correlated features stand in for it. Importance shows what a model *used*; ablation shows what it *needed*.
+The card+address key is the most valuable single idea. LightGBM's own importance ranks `card_n_prior` first, yet removing it costs little because correlated features stand in for it. Importance shows what a model *used*; ablation shows what it *needed*.
+
+### Data findings
+
+From [`notebooks/01_data_exploration.ipynb`](notebooks/01_data_exploration.ipynb):
+
+1. **3.50% of transactions are fraud**, so accuracy is not a usable metric.
+2. **182 days, and fraud drifts week to week** (1.85% to 5.06%). Train is days 1–120 (413,378 rows), validation 120–152 (88,581), test 152–182 (88,581); each split has 3.4–3.5% fraud.
+3. **Volume doubles around days 20–25** (peak 6,852 transactions/day vs a median of 3,050) while fraud rate hits its low.
+4. **Amount alone barely separates fraud** (median $75.00 vs $68.50), except the $5–20 band: 8.3% fraud (2.4× average), holding 10% of all fraud.
+5. **Missingness is a signal.** The 24% of transactions with an identity record are 3.8× more likely to be fraud. 214 of 435 columns are more than half empty.
+6. **Product type matters most among simple columns:** ProductCD `C` is 11.7% fraud vs 2.0% for `W`. Mobile devices (10.2%) and credit cards (6.7% vs 2.4% debit) are elevated.
+7. **Email domain varies:** outlook.com 9.5% vs gmail.com 4.4% (domains with 2,000+ transactions).
+8. **Quiet hours are riskier:** ~10% fraud in the two lowest-volume hours vs ~2.3% in the busiest (clock shifted; the reference time is hidden).
 
 ## Merchant categorization
 
 Raw descriptors like `[debit] PAYPAL *DATACAMP JYF7455M6J` → one of 17 categories. Developed on [DoDataThings/us-bank-transaction-categories-v2](https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2) (68,000 synthetic rows from ~500 real merchant names, MIT).
-
-**Headline: on merchants it had never seen, Gemini 3.1 Flash-Lite reached 92.3% accuracy at $0.02 per 1,000 descriptions, vs 60.0% for TF-IDF and 51.2% for hand-written rules.**
 
 ### Test set (10,157 descriptions, all from unseen merchants, evaluated once)
 
@@ -102,7 +126,7 @@ Raw descriptors like `[debit] PAYPAL *DATACAMP JYF7455M6J` → one of 17 categor
 
 ### Real-world check: my own bank transactions
 
-65 transactions from my Bank of America account (Aug–Sep 2026), imported with `python -m ledgerline.merchants.import_bofa` (which replaces person names with `[NAME]`), after leaving out 19 cash-advance-app rows that fit none of the 17 categories. Labeled by me with an AI-drafted first pass; I reviewed every row. Only these aggregate numbers are published; the transactions stay in gitignored `data/private/`. Results in [`reports/merchants_real.json`](reports/merchants_real.json).
+65 transactions from my Bank of America account (Aug–Sep 2026), imported with `python -m ledgerline.merchants.import_bofa` (which replaces person names with `[NAME]`), after leaving out 19 cash-advance-app rows that fit none of the 17 categories. Labeled by me with an AI-drafted first pass; I reviewed every row. Only aggregate numbers are published; the transactions stay in gitignored `data/private/` ([`reports/merchants_real.json`](reports/merchants_real.json)).
 
 | Approach | Synthetic test | **My real transactions** |
 |---|---|---|
@@ -111,62 +135,57 @@ Raw descriptors like `[debit] PAYPAL *DATACAMP JYF7455M6J` → one of 17 categor
 | **Gemini 3.1 Flash-Lite** | **92.3%** | **86.2%** |
 | Cascade | 92.5% | 83.1% |
 
-- **Gemini loses ~6 points on real data, mostly to ambiguity, not ignorance.** 7 of its 9 errors are judgment calls: county and city payments (labeled Fees, predicted Utilities) and money received via Zelle or Apple Cash (labeled Transfer, predicted Income).
-- **The cascade gets worse on real data.** TF-IDF's confidence was well calibrated on synthetic data but is confidently wrong on real statements, so the cascade keeps answers it should have passed on. Calibration learned on one distribution doesn't carry over to another.
-- **Small and narrow:** 65 rows over ~29 distinct merchants, 8 of the 17 categories, many repeats (Uber rides, bus fares). Treat it as a sanity check, not a benchmark.
-
-Results in [`reports/merchants_test.json`](reports/merchants_test.json); validation and tuning in [`reports/merchants_val.json`](reports/merchants_val.json). Reproduce with `python -m ledgerline.merchants.benchmark` (validation) then `--test` (once).
-
 ### What the numbers say
 
-- **Split by merchant, or the score is fake.** A third of rows are exact duplicates and only ~500 merchants exist. With a random split, TF-IDF scores **99.8%** by memorizing merchant names. Split so every test merchant is unseen, the same model scores **60%**. Merchants are estimated from the text (first word specific to ≤2 categories), giving 2,142 groups and zero letters-only overlap between train and test.
-- **The LLM wins because it knows merchants.** TF-IDF's mistakes are brands it's never seen: `BRILLIANT.ORG` and `DATACAMP` → Restaurants, `PRINCIPAL PMT` → Travel. No character pattern says DataCamp is education; world knowledge does.
-- **The cascade barely pays here.** TF-IDF's confidence is well calibrated (≥90% confident: right 94% of the time; <50%: right 29%), so routing only unsure rows to the LLM works. But at $0.02 per 1,000, the LLM is already cheap, and matching its accuracy still sends 85% of rows to it. On validation, a 0.8 threshold sent 62% for 0.3 points less accuracy. The cascade matters when LLM cost or latency is the constraint, not here.
-- **Remaining LLM errors are mostly label conventions**, not ignorance: Shopping ↔ Groceries (Costco, Walmart), Personal Care ↔ Shopping, Education ↔ Subscription (an online course is both).
-- **Cost** is measured from token counts on batched calls (40 descriptions per request) at the Sep 2026 list price. Latency is a single-description request, i.e. what a live API call would see.
+- **Split by merchant, or the score is fake.** A third of rows are exact duplicates and only ~500 merchants exist. With a random split, TF-IDF scores **99.8%** by memorizing merchant names; with every test merchant unseen, it scores **60%**. Merchants are estimated from the text (first word specific to ≤2 categories): 2,142 groups, zero text overlap between train and test.
+- **The LLM wins because it knows merchants.** TF-IDF's mistakes are brands it's never seen: `BRILLIANT.ORG` and `DATACAMP` → Restaurants. No character pattern says DataCamp is education; world knowledge does.
+- **On real data Gemini loses ~6 points, mostly to ambiguity.** 7 of its 9 errors are judgment calls: county and city payments (Fees vs Utilities) and money received via Zelle or Apple Cash (Transfer vs Income).
+- **The cascade gets worse on real data.** TF-IDF's confidence is well calibrated on synthetic data (≥90% confident: right 94% of the time) but confidently wrong on real statements, so the cascade keeps answers it should pass on. Calibration doesn't transfer across distributions. At $0.02 per 1,000, the LLM alone is the better choice here.
+- **Cost** is measured from token counts on batched calls (40 per request) at the Sep 2026 list price; latency is a single-description request.
+- **The real set is small:** 65 rows, ~29 distinct merchants, 8 of 17 categories. A sanity check, not a benchmark.
 
 ## API
-
-FastAPI service backed by Postgres, run with Docker Compose. Interactive docs at `http://localhost:8000/docs`.
 
 | Endpoint | In | Out |
 |---|---|---|
 | `POST /score` | one transaction (IEEE-CIS fields) | fraud score, flag decision, threshold, model version, top 3 reasons when flagged |
-| `POST /score/batch` | up to 1,000 transactions | results for valid records; bad records listed by index with their errors, never failing the batch |
+| `POST /score/batch` | up to 1,000 transactions | results for valid records; bad records listed by index with their errors |
 | `POST /merchant` | raw descriptor + debit/credit | category, confidence, and which model answered (`llm` or `tfidf`) |
-| `GET /health` | | model loaded, model version, database reachable (503 if not) |
+| `GET /health` | | model version, database reachable (503 if not), last hour's merchant answers by method |
+
+Interactive docs at `http://localhost:8000/docs`. `python -m ledgerline.api.demo` walks through every endpoint with real test-set transactions.
 
 ```bash
-curl -s localhost:8000/merchant -H "content-type: application/json"   -d '{"description": "PAYPAL *DATACAMP JYF7455M6J"}'
+curl -s localhost:8000/merchant -H "content-type: application/json" \
+  -d '{"description": "PAYPAL *DATACAMP JYF7455M6J"}'
 # {"category":"Education","confidence":null,"method":"llm"}
 ```
 
-A flagged transaction comes back with its reasons, ranked by how much each feature pushed the score up:
+A real test-set fraud, flagged with its reasons:
 
 ```json
-{"transaction_id": 3494377, "score": 0.888, "flagged": true, "threshold": 0.0268,
+{"transaction_id": 3559022, "score": 0.0405, "flagged": true, "threshold": 0.0268,
  "model_version": "lgbm-5697035084",
  "reasons": [
-   {"feature": "C13", "value": 0.0, "contribution": 2.10,
-    "text": "C13 = 0 (count, e.g. addresses linked to the card; exact meaning masked by the data provider)"},
-   {"feature": "id_31", "value": "chrome generic", "contribution": 2.03, "text": "browser: chrome generic"},
-   ...]}
+   {"feature": "D10", "contribution": 0.91, "text": "D10 = 620 (time gap, e.g. days since a previous transaction; exact meaning masked by the data provider)"},
+   {"feature": "basic_log_amount", "contribution": 0.77, "text": "amount $171.00"},
+   {"feature": "card1", "contribution": 0.73, "text": "card number bucket: 10925"}]}
 ```
 
 ### Design decisions
 
-- **Same feature code in training and serving.** The API fetches the card's earlier transactions from Postgres and runs the same `history_features` / `basic_features` functions used in training. A parity test scores 300 real test-set transactions through the HTTP API (history read from Postgres) and checks every score matches the offline evaluation pipeline to within 1e-9. A second parity test on synthetic data runs in CI.
-- **Bad input never causes a 500.** The transaction schema is generated from the model's feature list: missing required fields, wrong types, non-positive amounts, unknown product codes or card types, and unknown fields (typos) all return a 422 that names the field. In a batch, a bad record is reported by index and the rest are scored.
-- **Every decision is audited.** Each `/score` and `/merchant` call writes the input, its SHA-256 hash, the output, score, threshold, flag, model version and timestamp to Postgres. If that write fails the API returns 503: no decision leaves without a record.
-- **Pinned, versioned models.** The model version is a hash of its trees. `MODEL_VERSION` pins the version to serve (default: latest trained), and it's logged with every decision.
+- **Same feature code in training and serving.** A parity test scores 300 real test-set transactions through the HTTP API (history read from Postgres) and checks every score matches the offline pipeline to within 1e-9. A synthetic-data version runs in CI.
+- **Bad input never causes a 500.** The transaction schema is generated from the model's feature list. Missing fields, wrong types, non-positive amounts, unknown product codes or card types, and unknown (typo'd) fields all return a 422 naming the field. In a batch, a bad record is reported by index and the rest are scored.
+- **Every decision is audited.** Each `/score` and `/merchant` call writes the input, its SHA-256 hash, output, score, threshold, flag, model version and timestamp to Postgres. If that write fails the API returns 503: no decision leaves without a record.
+- **Pinned, versioned models.** The model version is a hash of its trees; `MODEL_VERSION` pins what's served and every decision logs it, like a bank's model registry with approved versions.
 - **Refuses to start broken.** A missing model, unreachable database or invalid threshold stops startup with a message saying what to fix.
-- **Threshold is config.** `FLAG_THRESHOLD` changes the flag cutoff without retraining.
-- **Reasons only for flags.** Exact per-feature contributions (TreeSHAP over 2,405 trees) cost ~0.45 s, so they're computed for flagged transactions (≈3.5% of traffic), which is where a bank owes an explanation. The strongest signals in this dataset are columns the provider masked (C, D, M, V), so reasons for those name the feature family rather than an exact meaning; with a bank's own data every feature would have a real name.
-- **The merchant LLM can fail safely.** Gemini answers when available; on a timeout, quota error or missing key, `/merchant` falls back to TF-IDF and says so in `method`.
+- **Threshold is config.** `FLAG_THRESHOLD` changes the cutoff without retraining.
+- **Reasons only for flags.** Exact per-feature contributions (TreeSHAP over 2,405 trees) cost ~0.45 s, so they're computed for flagged transactions (≈3.5% of traffic), where a bank owes an explanation.
+- **Fallbacks are visible.** If Gemini times out or errors, `/merchant` answers with TF-IDF and says so. `/health` reports the last hour's answers by method from the audit log, so a silent fallback shows up. (This caught a real bug: a 5 s timeout that Gemini rejects, which had quietly sent every uncached request to TF-IDF.)
 
 ### Performance
 
-Load test with 1,000 real test-set transactions per level (`python -m ledgerline.api.loadtest`), Docker Compose on an 8-CPU Windows laptop (WSL2), 4 workers, client and server sharing the CPUs:
+1,000 real test-set transactions per level (`python -m ledgerline.api.loadtest`), Docker Compose on an 8-CPU Windows laptop (WSL2), 4 workers, client inside the Docker network:
 
 | Concurrent clients | Requests/s | p50 | p95 | Flagged (with reasons) p50 |
 |---|---|---|---|---|
@@ -175,13 +194,34 @@ Load test with 1,000 real test-set transactions per level (`python -m ledgerline
 | 8 | **62.9** | 81 ms | 233 ms | 1.09 s |
 | 16 | 67.1 | 177 ms | 457 ms | 1.43 s |
 
-Zero errors in 4,000 requests. Measured from inside the Docker network ([`reports/loadtest.json`](reports/loadtest.json)); from the Windows host, Docker Desktop's port forwarding adds ~45 ms per request ([`reports/loadtest_from_windows_host.json`](reports/loadtest_from_windows_host.json)).
+Zero errors in 4,000 requests ([`reports/loadtest.json`](reports/loadtest.json)). From the Windows host, Docker Desktop's port forwarding adds ~45 ms per request ([`reports/loadtest_from_windows_host.json`](reports/loadtest_from_windows_host.json)).
 
-What moved the numbers: p50 went from 156 ms to 29 ms by (1) computing history features on just the 8 columns they read instead of all 434, (2) caching the category lookup tables, and (3) setting `POLARS_MAX_THREADS=1` in the API container, since Polars' thread pool cost more than it saved on per-request frames (107 ms → 13 ms for feature computation). Each change was re-checked against the parity test.
+p50 went from 156 ms to 29 ms after profiling: computing history features on the 8 columns they read instead of all 434, caching category lookup tables, and `POLARS_MAX_THREADS=1` in the API (Polars' thread pool cost more than it saved on per-request frames: 107 ms → 13 ms). Each change was re-checked against the parity test.
+
+## How I validated this
+
+- **Time-based split, no shuffling.** A test proves every validation/test transaction is strictly later than every training one.
+- **No feature sees the future.** History features only use earlier transactions of the same card. Tests delete all data after a cutoff and check no earlier feature changes, and edit a later transaction and check nothing earlier moves.
+- **The card+address key.** There's no customer ID. `card1` + `addr1` + first-use day (`day − D1`, since D1 counts days since the card's first transaction) stands in for one; only 3,112 of its 217,850 groups mix fraud and legit. Past fraud labels are never features.
+- **Baselines first, noise measured.** Every model is compared with rules and logistic regression, and LightGBM variants are repeated across seeds so differences can be told from noise.
+- **Test sets touched once.** `python -m ledgerline.evaluate` and the merchant `--test` / `--real` runs refuse to run twice without `--force` and record what they scored.
+- **The oracle decides, not the model.** All scores use labels the model never saw; no LLM grades its own output.
+- **Reproducible across machines.** Pinned versions, fixed seeds, deterministic LightGBM. Training from a fresh copy inside Linux Docker produced the same `lgbm-5697035084` as on Windows: bit-identical trees, threshold and metrics. (The TF-IDF model's version hashes its saved file, which differs across platforms, so only the fraud model is verified identical.)
+- **Setup verified on a fresh copy.** Code from git plus the raw data, then the three commands in [Run it](#run-it): healthy API, working endpoints, 422s for bad input.
+
+## Limitations and next steps
+
+- **Masked features limit explanations.** The strongest signals are columns the data provider anonymized (C, D, M, V), so reasons can only name their family. With a bank's own data every feature has a real name.
+- **No label delay.** Real fraud labels arrive weeks later as chargebacks; this data has them immediately. A production setup would train only on matured labels.
+- **The threshold drifts** (1% FPR on validation became 1.44% on test). Next: a drift monitor comparing this week's score distribution to training, and scheduled threshold re-tuning.
+- **Shadow mode** for new model versions (score alongside the live model without affecting decisions) would be the safe way to roll out a retrain.
+- **Reasons are slow** (~0.45 s). A smaller model, or approximating contributions, would cut flagged-request latency.
+- **The real merchant set is small** and AI-drafted (reviewed by me). A larger, independently labeled set would make the real-world number stronger.
+- **Descriptors sent to Gemini** leave the machine. A bank would use a privately hosted model or a contract that rules out training on its data.
 
 ## Run it
 
-Needs Docker and the two datasets (see [Data](#data); merchant data goes in `data/raw/merchants/`).
+Needs Docker, plus the [IEEE-CIS data](https://www.kaggle.com/competitions/ieee-fraud-detection/data) (`train_transaction.csv`, `train_identity.csv` in `data/raw/`; accept the competition rules first) and [`transactions-synthetic.csv`](https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2) in `data/raw/merchants/`.
 
 ```bash
 docker compose run --rm train   # trains the fraud and merchant models (~15 min)
@@ -191,28 +231,39 @@ docker compose up -d            # API on http://localhost:8000
 
 Optional: copy `.env.example` to `.env` and add `GEMINI_API_KEY` to enable the LLM merchant classifier.
 
-## How I validated this
-
-- **Time-based split, no shuffling.** Train days 1–120, validation 120–152, test 152–182. A test proves every validation/test transaction is strictly later than every training one.
-- **No feature sees the future.** History features only use transactions with an earlier timestamp for the same card. Tests delete all data after a cutoff and check that no earlier feature changes, and edit a later transaction and check that nothing earlier moves.
-- **The card+address key.** The data has no customer ID. `card1` + `addr1` + first-use day (`day − D1`, since D1 counts days since the card's first transaction) stands in for one; only 3,112 of its 217,850 groups mix fraud and legit. Past fraud labels are never used as features.
-- **Test set touched once.** `python -m ledgerline.evaluate` refuses to run a second time without `--force` and records the model version it scored.
-- **Reproducible across machines.** Pinned library versions, fixed seeds, deterministic LightGBM; the model version is a hash of its trees. Training from a fresh copy of the repo inside Linux Docker produced the same `lgbm-5697035084` as training on Windows: bit-identical trees, threshold and metrics. (The TF-IDF merchant model's version is a hash of its saved file, which differs across platforms, so only the fraud model is verified identical.)
-- **Setup steps verified on a fresh copy.** Code from git plus the raw data, then `docker compose run --rm train`, `run --rm seed`, `up -d`: healthy API, working endpoints, 422s for bad input.
-
-## Reproduce
+## Development
 
 ```bash
-python -m ledgerline.baselines     # rules + logistic regression, validation
-python -m ledgerline.experiments   # all model variants + ablation (~1 hour)
-python -m ledgerline.train         # final model -> artifacts/models/<version>/
-python -m ledgerline.evaluate      # test set, once
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -e ".[dev,notebooks]"
+pre-commit install
+pytest                           # Postgres tests need TEST_DATABASE_URL
+```
+
+Reproduce every number:
+
+```bash
+python -m ledgerline.baselines                    # rules + logistic regression, validation
+python -m ledgerline.experiments                  # model variants + ablation (~1 hour)
+python -m ledgerline.train                        # final model -> artifacts/models/<version>/
+python -m ledgerline.evaluate                     # fraud test set, once
 
 python -m ledgerline.merchants.benchmark          # merchant approaches, validation
 python -m ledgerline.merchants.benchmark --test   # synthetic test set, once
 python -m ledgerline.merchants.benchmark --real   # your labeled transactions, once
 
-pytest                                             # 133 tests; DB tests need TEST_DATABASE_URL
+python -m ledgerline.api.loadtest                 # latency and throughput against a running API
 ```
 
-The merchant LLM needs `GEMINI_API_KEY` in `.env` (see `.env.example`). Answers are cached in `data/processed/llm_cache/`, so re-runs cost nothing.
+Merchant LLM answers are cached in `data/processed/llm_cache/`, so re-runs cost nothing. See [PLAN.md](PLAN.md) for the roadmap and the full dated results log.
+
+```
+src/ledgerline/
+  data/        loading, time-based split
+  features/    basic + leakage-safe history features, category encoder
+  models/      rules, logistic regression, LightGBM, versioned registry
+  eval/        metrics (PR-AUC, recall @ FPR, precision @ top-k)
+  merchants/   cleanup, rules, TF-IDF, Gemini, benchmark, BofA importer
+  api/         FastAPI app, schemas, scoring, Postgres store, load test, demo
+```

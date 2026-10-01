@@ -100,3 +100,18 @@ def test_seed_bulk_loads_and_skips_existing_rows(store):
 
 def test_health(store):
     assert store.healthy()
+
+
+def test_merchant_methods_counts_recent_answers(store):
+    for method in ("llm", "llm", "tfidf"):
+        store.record(
+            {
+                "endpoint": "/merchant",
+                "input": {"description": "x"},
+                "input_hash": "h",
+                "output": {"method": method},
+                "model_version": method,
+            }
+        )
+
+    assert store.merchant_methods(since_minutes=60) == {"llm": 2, "tfidf": 1}

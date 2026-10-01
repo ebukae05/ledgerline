@@ -253,13 +253,11 @@ Compare three approaches on the same test sets:
 
 ---
 
-## Target resume bullets (fill in the X's with real numbers at the end)
+## Resume bullets (final, from the Results log)
 
-- Trained a LightGBM fraud model on 590K+ card transactions using time-based splits and leakage-safe velocity features, achieving **X% recall at 1% FPR** vs **Y%** for a rules baseline
-- Benchmarked rules, TF-IDF, and LLM approaches for classifying raw bank descriptors, reaching **X% accuracy on a hand-labeled real-world holdout** at **$Y per 1K** transactions
-- Served real-time scoring via FastAPI + PostgreSQL audit logging at **Xms p50 latency**, with **N automated tests** and fault isolation for malformed records
-
----
+- Trained a LightGBM fraud model on 590K+ card transactions using time-based splits and leakage-safe velocity features, catching **48% of fraud at a 1% false-positive rate** on held-out future data vs **3%** for a rules baseline
+- Benchmarked rules, TF-IDF, and LLM approaches for classifying raw bank descriptors, reaching **92% accuracy on unseen merchants** and **86% on a real-world holdout of my own transactions** at **$0.02 per 1K** descriptions
+- Served real-time fraud scoring via FastAPI + PostgreSQL audit logging at **29 ms p50 latency** (63 req/s per instance), with **135 automated tests**, training/serving parity verified to 1e-9, and fault isolation for malformed records
 
 ## Week-by-week (flexible)
 
@@ -293,3 +291,4 @@ Compare three approaches on the same test sets:
 | 2026-09-30 | 5 | Load test v1 (Docker, 1 worker) | p50 156 ms, 23 req/s at 8 clients | Features computed over all 434 columns; Polars multithreading |
 | 2026-09-30 | 5 | Narrow feature path + cached encoder + POLARS_MAX_THREADS=1 + 4 workers | p50 29 ms / p95 93 ms (1 client); 62.9 req/s at 8 clients; flagged p50 450 ms | In-network client; from Windows host +45 ms (Docker port forwarding). 0 errors / 4,000 |
 | 2026-09-30 | 5 | Fresh copy of repo + raw data → `docker compose run train/seed`, `up` | Same model version lgbm-5697035084 trained in Linux Docker as on Windows (bit-identical); API healthy | 10.5 min training; seeding 590,540 rows in 4 s |
+| 2026-09-30 | 6 | Demo run surfaced a bug: Gemini timeout set to 5 s (minimum 10 s); every uncached /merchant call had silently fallen back to TF-IDF | Fixed timeout; /health now reports last hour's merchant answers by method from the audit log | Fallbacks need monitoring, or they hide outages |

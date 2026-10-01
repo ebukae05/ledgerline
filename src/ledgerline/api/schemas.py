@@ -99,3 +99,6 @@ class Health(BaseModel):
     model_version: str
     database: bool
     merchant_llm: bool
+    merchant_last_hour: dict[str, int] = Field(
+        description="/merchant answers in the last hour by method (llm / tfidf), from the audit log"
+    )

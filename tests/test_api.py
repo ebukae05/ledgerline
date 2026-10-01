@@ -358,3 +358,13 @@ def test_reason_text(feature, value, expected):
 )
 def test_masked_features_get_their_family_description(feature, value, expected):
     assert expected in describe(feature, value)
+
+
+def test_health_shows_recent_merchant_answers_by_method(registry, merchant_model):
+    # A silent fallback keeps requests working; /health makes it visible.
+    c, _ = make_client(registry, merchant_model, llm=FakeLLM(error=TimeoutError()))
+
+    c.post("/merchant", json={"description": "SAFEWAY #1"})
+    c.post("/merchant", json={"description": "SAFEWAY #2"})
+
+    assert c.get("/health").json()["merchant_last_hour"] == {"tfidf": 2}
