@@ -1,0 +1,204 @@
+{
+  "evaluated_at": "2026-10-01T01:38:17+00:00",
+  "llm_model": "gemini-3.1-flash-lite",
+  "tfidf_c": 3.0,
+  "cascade_threshold": 0.95,
+  "rules": {
+    "n": 65,
+    "accuracy": 0.5384615384615384,
+    "macro_f1": 0.3551090757940603,
+    "f1_by_category": {
+      "Education": 0.0,
+      "Entertainment": 0.0,
+      "Fees": 0.0,
+      "Groceries": 0.0,
+      "Healthcare": 0.0,
+      "Income": 0.7368421052631579,
+      "Insurance": 0.0,
+      "Mortgage": 0.0,
+      "Personal Care": 0.0,
+      "Rent": 0.0,
+      "Restaurants": 0.0,
+      "Shopping": 0.25,
+      "Subscription": 0.3333333333333333,
+      "Transfer": 0.8148148148148148,
+      "Transportation": 0.7058823529411765,
+      "Travel": 0.0,
+      "Utilities": 0.0
+    },
+    "top_confusions": [
+      {
+        "true": "Transportation",
+        "predicted": "Shopping",
+        "count": 8
+      },
+      {
+        "true": "Restaurants",
+        "predicted": "Shopping",
+        "count": 6
+      },
+      {
+        "true": "Fees",
+        "predicted": "Shopping",
+        "count": 4
+      },
+      {
+        "true": "Subscription",
+        "predicted": "Shopping",
+        "count": 3
+      },
+      {
+        "true": "Transfer",
+        "predicted": "Income",
+        "count": 3
+      }
+    ]
+  },
+  "tfidf": {
+    "n": 65,
+    "accuracy": 0.6153846153846154,
+    "macro_f1": 0.4252899330463893,
+    "f1_by_category": {
+      "Education": 0.0,
+      "Entertainment": 0.0,
+      "Fees": 0.0,
+      "Groceries": 0.0,
+      "Healthcare": 0.0,
+      "Income": 0.0,
+      "Insurance": 0.0,
+      "Mortgage": 0.0,
+      "Personal Care": 0.0,
+      "Rent": 0.0,
+      "Restaurants": 0.23529411764705882,
+      "Shopping": 0.75,
+      "Subscription": 0.6666666666666666,
+      "Transfer": 0.8235294117647058,
+      "Transportation": 0.926829268292683,
+      "Travel": 0.0,
+      "Utilities": 0.0
+    },
+    "top_confusions": [
+      {
+        "true": "Income",
+        "predicted": "Restaurants",
+        "count": 7
+      },
+      {
+        "true": "Restaurants",
+        "predicted": "Utilities",
+        "count": 5
+      },
+      {
+        "true": "Fees",
+        "predicted": "Transfer",
+        "count": 4
+      },
+      {
+        "true": "Transfer",
+        "predicted": "Income",
+        "count": 2
+      },
+      {
+        "true": "Income",
+        "predicted": "Transportation",
+        "count": 2
+      }
+    ]
+  },
+  "llm": {
+    "n": 65,
+    "accuracy": 0.8615384615384616,
+    "macro_f1": 0.816739295187571,
+    "f1_by_category": {
+      "Education": 1.0,
+      "Entertainment": 0.0,
+      "Fees": 0.0,
+      "Groceries": 0.0,
+      "Healthcare": 0.0,
+      "Income": 0.8571428571428571,
+      "Insurance": 0.0,
+      "Mortgage": 0.0,
+      "Personal Care": 0.0,
+      "Rent": 0.0,
+      "Restaurants": 0.9230769230769231,
+      "Shopping": 1.0,
+      "Subscription": 0.8571428571428571,
+      "Transfer": 0.896551724137931,
+      "Transportation": 1.0,
+      "Travel": 0.0,
+      "Utilities": 0.0
+    },
+    "top_confusions": [
+      {
+        "true": "Fees",
+        "predicted": "Utilities",
+        "count": 4
+      },
+      {
+        "true": "Transfer",
+        "predicted": "Income",
+        "count": 3
+      },
+      {
+        "true": "Subscription",
+        "predicted": "Entertainment",
+        "count": 1
+      },
+      {
+        "true": "Restaurants",
+        "predicted": "Groceries",
+        "count": 1
+      }
+    ],
+    "cost_per_1k_usd": 0.027946153846153846
+  },
+  "cascade": {
+    "n": 65,
+    "accuracy": 0.8307692307692308,
+    "macro_f1": 0.7972054113358462,
+    "f1_by_category": {
+      "Education": 1.0,
+      "Entertainment": 0.0,
+      "Fees": 0.0,
+      "Groceries": 0.0,
+      "Healthcare": 0.0,
+      "Income": 0.782608695652174,
+      "Insurance": 0.0,
+      "Mortgage": 0.0,
+      "Personal Care": 0.0,
+      "Rent": 0.0,
+      "Restaurants": 0.9230769230769231,
+      "Shopping": 1.0,
+      "Subscription": 0.8571428571428571,
+      "Transfer": 0.8148148148148148,
+      "Transportation": 1.0,
+      "Travel": 0.0,
+      "Utilities": 0.0
+    },
+    "top_confusions": [
+      {
+        "true": "Transfer",
+        "predicted": "Income",
+        "count": 5
+      },
+      {
+        "true": "Fees",
+        "predicted": "Utilities",
+        "count": 4
+      },
+      {
+        "true": "Subscription",
+        "predicted": "Entertainment",
+        "count": 1
+      },
+      {
+        "true": "Restaurants",
+        "predicted": "Groceries",
+        "count": 1
+      }
+    ],
+    "threshold": 0.95,
+    "share_sent_to_llm": 0.6615384615384615,
+    "cost_per_1k_usd": 0.018487455621301774
+  }
+}

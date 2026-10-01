@@ -99,7 +99,21 @@ Raw descriptors like `[debit] PAYPAL *DATACAMP JYF7455M6J` → one of 17 categor
 | TF-IDF char n-grams + logistic regression | 60.0% | 0.607 | $0 | 0.45 ms |
 | **Gemini 3.1 Flash-Lite**, structured JSON output | **92.3%** | **0.927** | **$0.020** | 699 ms |
 | Cascade: TF-IDF when ≥95% confident, else Gemini | 92.5% | 0.928 | $0.017 | — |
-| Your real transactions | _pending_ | | | |
+
+### Real-world check: my own bank transactions
+
+65 transactions from my Bank of America account (Aug–Sep 2026), imported with `python -m ledgerline.merchants.import_bofa` (which replaces person names with `[NAME]`), after leaving out 19 cash-advance-app rows that fit none of the 17 categories. Labeled by me with an AI-drafted first pass; I reviewed every row. Only these aggregate numbers are published; the transactions stay in gitignored `data/private/`. Results in [`reports/merchants_real.json`](reports/merchants_real.json).
+
+| Approach | Synthetic test | **My real transactions** |
+|---|---|---|
+| Rules | 51.2% | 53.8% |
+| TF-IDF + LR | 60.0% | 61.5% |
+| **Gemini 3.1 Flash-Lite** | **92.3%** | **86.2%** |
+| Cascade | 92.5% | 83.1% |
+
+- **Gemini loses ~6 points on real data, mostly to ambiguity, not ignorance.** 7 of its 9 errors are judgment calls: county and city payments (labeled Fees, predicted Utilities) and money received via Zelle or Apple Cash (labeled Transfer, predicted Income).
+- **The cascade gets worse on real data.** TF-IDF's confidence was well calibrated on synthetic data but is confidently wrong on real statements, so the cascade keeps answers it should have passed on. Calibration learned on one distribution doesn't carry over to another.
+- **Small and narrow:** 65 rows over ~29 distinct merchants, 8 of the 17 categories, many repeats (Uber rides, bus fares). Treat it as a sanity check, not a benchmark.
 
 Results in [`reports/merchants_test.json`](reports/merchants_test.json); validation and tuning in [`reports/merchants_val.json`](reports/merchants_val.json). Reproduce with `python -m ledgerline.merchants.benchmark` (validation) then `--test` (once).
 
