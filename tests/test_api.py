@@ -368,3 +368,39 @@ def test_health_shows_recent_merchant_answers_by_method(registry, merchant_model
     c.post("/merchant", json={"description": "SAFEWAY #2"})
 
     assert c.get("/health").json()["merchant_last_hour"] == {"tfidf": 2}
+
+
+def test_recent_decisions_are_newest_first_without_full_input(client, data):
+    c, _ = client
+    for i in (0, 1, 2):
+        c.post("/score", json=payload(data.row(i, named=True)))
+
+    rows = c.get("/decisions?limit=2").json()
+
+    assert [r["transaction_id"] for r in rows] == [2, 1]
+    assert "input" not in rows[0] and rows[0]["input_hash"]
+    assert c.get("/decisions?limit=0").status_code == 422
+    assert c.get("/decisions?limit=500").status_code == 422
+
+
+def test_samples_endpoint(registry, merchant_model, tmp_path):
+    model, meta = load_model(models_dir=registry)
+    path = tmp_path / "samples.json"
+    app = create_app(
+        Settings(samples_path=path),
+        scorer=Scorer(model, meta),
+        merchant=MerchantService(merchant_model),
+        store=MemoryStore(),
+    )
+    c = TestClient(app)
+
+    assert c.get("/samples").status_code == 404
+    path.write_text('{"normal": [], "fraud_flagged": [], "fraud_missed": []}')
+    assert c.get("/samples").json()["normal"] == []
+
+
+def test_ui_is_served(client):
+    c, _ = client
+    assert c.get("/", follow_redirects=False).headers["location"] == "/ui/"
+    r = c.get("/ui/")
+    assert r.status_code == 200 and "Ledgerline" in r.text

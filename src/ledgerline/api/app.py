@@ -20,12 +20,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import joblib
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
+from ledgerline.api.samples import SAMPLES_PATH
 from ledgerline.api.schemas import (
     BatchError,
     BatchRequest,
@@ -47,6 +49,7 @@ log = logging.getLogger("ledgerline.api")
 
 # Gemini rejects deadlines under 10 s (400 INVALID_ARGUMENT).
 LLM_TIMEOUT_MS = 10_000
+UI_DIR = Path(__file__).parent / "ui"
 
 
 class StartupError(RuntimeError):
@@ -63,6 +66,7 @@ class Settings:
     )
     models_dir: Path = MODELS_DIR
     merchant_dir: Path = MERCHANT_DIR
+    samples_path: Path = SAMPLES_PATH
 
 
 class MerchantService:
@@ -260,6 +264,28 @@ def create_app(
             model_version=merchant.version(result.method),
         )
         return result
+
+    @app.get("/decisions")
+    def recent_decisions(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
+        """Latest audit records, newest first (the web UI's audit panel)."""
+        try:
+            return jsonable_encoder(store.recent_decisions(limit))
+        except Exception as error:
+            raise HTTPException(503, "audit log unavailable") from error
+
+    @app.get("/samples")
+    def samples():
+        """Example test-set transactions for the web UI, if they've been generated."""
+        if not settings.samples_path.exists():
+            raise HTTPException(404, "No samples yet. Run `python -m ledgerline.api.samples`.")
+        return FileResponse(settings.samples_path, media_type="application/json")
+
+    @app.get("/", include_in_schema=False)
+    def home():
+        return RedirectResponse("/ui/")
+
+    if UI_DIR.exists():
+        app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
 
     @app.get("/health", response_model=Health)
     def health():

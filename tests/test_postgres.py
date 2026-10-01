@@ -115,3 +115,25 @@ def test_merchant_methods_counts_recent_answers(store):
         )
 
     assert store.merchant_methods(since_minutes=60) == {"llm": 2, "tfidf": 1}
+
+
+def test_recent_decisions_newest_first(store):
+    for tid in (1, 2, 3):
+        store.record(
+            {
+                "endpoint": "/score",
+                "transaction_id": tid,
+                "input": {"TransactionID": tid},
+                "input_hash": f"h{tid}",
+                "output": {"score": 0.1},
+                "score": 0.1,
+                "threshold": 0.5,
+                "flagged": False,
+                "model_version": "lgbm-test",
+            }
+        )
+
+    rows = store.recent_decisions(limit=2)
+
+    assert [r["transaction_id"] for r in rows] == [3, 2]
+    assert rows[0]["output"] == {"score": 0.1} and "input" not in rows[0]

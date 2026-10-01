@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ledgerline</title>
+  <meta name="description" content="Card fraud scoring and merchant categorization, served through an audited API.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@200;300;400&family=Inter:wght@400;500&family=Space+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='none' stroke='%23E4E2D8' stroke-width='2'%3E%3Cellipse cx='16' cy='16' rx='13' ry='9'/%3E%3Cellipse cx='16' cy='16' rx='8' ry='5'/%3E%3Cellipse cx='16' cy='16' rx='3' ry='2'/%3E%3C/g%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="nav">
+    <a class="wordmark" href="#top">Ledgerline</a>
+    <nav aria-label="Sections">
+      <a href="#score">Score</a>
+      <a href="#categorize">Categorize</a>
+      <a href="#audit">Audit</a>
+      <a href="#system">System</a>
+      <span class="live" id="nav-status" title="API status"><span class="dot"></span><span class="label">connecting</span></span>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" id="top">
+      <canvas id="field" aria-hidden="true"></canvas>
+      <div class="hero-shade" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <p class="eyebrow mono">Fraud scoring · merchant categories · every decision audited</p>
+        <h1>Every swipe,<br>scored.</h1>
+        <dl class="stats">
+          <div><dt class="mono">Fraud caught at 1% false positives</dt><dd>48%</dd></div>
+          <div><dt class="mono">Median scoring latency</dt><dd>29&nbsp;ms</dd></div>
+          <div><dt class="mono">Unseen merchants categorized</dt><dd>92%</dd></div>
+          <div><dt class="mono">Model in service</dt><dd class="version" id="hero-version">—</dd></div>
+        </dl>
+      </div>
+      <a class="scroll-cue mono" href="#score">Scroll</a>
+    </section>
+
+    <section class="block" id="score" aria-labelledby="score-title">
+      <div class="block-head">
+        <span class="num mono">01.</span>
+        <h2 id="score-title">Score a transaction</h2>
+        <p class="lede">Send a real transaction from the held-out test set, which the model never trained on. The API fetches the card's history from Postgres, runs the same feature code used in training, and returns a score. Flags come with their reasons.</p>
+      </div>
+
+      <div class="panel">
+        <div class="controls" role="group" aria-label="Example transactions">
+          <button class="pill" data-kind="normal">Normal transaction</button>
+          <button class="pill" data-kind="fraud_flagged">Known fraud</button>
+          <button class="pill" data-kind="fraud_missed">Fraud the model misses</button>
+          <button class="pill pill-ghost" data-kind="broken">Broken request</button>
+        </div>
+
+        <details class="editor">
+          <summary class="mono">Request body <span id="body-summary"></span></summary>
+          <textarea id="score-body" spellcheck="false" aria-label="Transaction JSON"></textarea>
+          <button class="pill" id="score-send">Send</button>
+        </details>
+
+        <div class="result" id="score-result" aria-live="polite">
+          <p class="placeholder">Pick an example above to score it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="categorize" aria-labelledby="cat-title">
+      <div class="block-head">
+        <span class="num mono">02.</span>
+        <h2 id="cat-title">Categorize a descriptor</h2>
+        <p class="lede">Raw bank text in, one of 17 categories out. Gemini answers when it can; if it times out or errors, a local TF-IDF model answers instead, and the response says which one did.</p>
+      </div>
+
+      <form class="panel" id="cat-form" autocomplete="off">
+        <label class="field">
+          <span class="mono">Descriptor</span>
+          <input id="cat-input" maxlength="300" placeholder="PAYPAL *DATACAMP JYF7455M6J">
+        </label>
+        <div class="row">
+          <div class="toggle" role="radiogroup" aria-label="Direction">
+            <label><input type="radio" name="direction" value="debit" checked><span>Money out</span></label>
+            <label><input type="radio" name="direction" value="credit"><span>Money in</span></label>
+          </div>
+          <button class="pill" type="submit">Categorize</button>
+        </div>
+        <div class="chips" aria-label="Examples">
+          <button type="button" class="chip">PAYPAL *DATACAMP JYF7455M6J</button>
+          <button type="button" class="chip">TST* BLUE BOTTLE COFFEE OAKLAND CA</button>
+          <button type="button" class="chip">NORWEGIAN CRUISE LINE 8007 MIAMI FL</button>
+          <button type="button" class="chip">GEICO EFT PYMT PPD ID: 1978718511</button>
+          <button type="button" class="chip" data-direction="credit">ACME CORP PAYROLL PPD ID: 4455667788</button>
+        </div>
+        <div class="result" id="cat-result" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <section class="block" id="audit" aria-labelledby="audit-title">
+      <div class="block-head">
+        <span class="num mono">03.</span>
+        <h2 id="audit-title">Audit trail</h2>
+        <p class="lede">Every decision is written to Postgres with its input hash, score, threshold and model version before the response leaves. If that write fails, the API returns 503 rather than an unrecorded decision.</p>
+      </div>
+      <div class="panel table-wrap">
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Endpoint</th><th>Transaction</th><th class="r">Score</th><th>Decision</th><th>Model</th><th>Input hash</th></tr>
+          </thead>
+          <tbody id="audit-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="system" aria-labelledby="system-title">
+      <div class="block-head">
+        <span class="num mono">04.</span>
+        <h2 id="system-title">System</h2>
+        <p class="lede">One request, end to end. Offline training and this service share one feature implementation; a parity test proves their scores match to within 1e-9.</p>
+      </div>
+      <ol class="steps">
+        <li><span class="mono">Validate</span><p>Schema generated from the model's own feature list. Bad input is a 422 naming the field, never a 500.</p></li>
+        <li><span class="mono">History</span><p>The card's earlier transactions, from Postgres.</p></li>
+        <li><span class="mono">Features</span><p>The same functions used in training: velocity, time since previous, amount vs card average.</p></li>
+        <li><span class="mono">Score</span><p>LightGBM, pinned by version. Reasons computed only for flags.</p></li>
+        <li><span class="mono">Audit</span><p>Decision recorded before the response is sent.</p></li>
+      </ol>
+      <dl class="health" id="health">
+        <div><dt class="mono">Model</dt><dd id="h-model">—</dd></div>
+        <div><dt class="mono">Database</dt><dd id="h-db">—</dd></div>
+        <div><dt class="mono">Merchant LLM</dt><dd id="h-llm">—</dd></div>
+        <div><dt class="mono">Merchant answers, last hour</dt><dd id="h-merchant">—</dd></div>
+      </dl>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span class="wordmark">Ledgerline</span>
+    <span class="mono"><a href="/docs">API docs</a> · <a href="https://github.com/ebukae05/ledgerline">Source</a></span>
+  </footer>
+
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  <script type="module" src="field.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

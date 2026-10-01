@@ -257,7 +257,7 @@ Compare three approaches on the same test sets:
 
 - Trained a LightGBM fraud model on 590K+ card transactions using time-based splits and leakage-safe velocity features, catching **48% of fraud at a 1% false-positive rate** on held-out future data vs **3%** for a rules baseline
 - Benchmarked rules, TF-IDF, and LLM approaches for classifying raw bank descriptors, reaching **92% accuracy on unseen merchants** and **86% on a real-world holdout of my own transactions** at **$0.02 per 1K** descriptions
-- Served real-time fraud scoring via FastAPI + PostgreSQL audit logging at **29 ms p50 latency** (63 req/s per instance), with **135 automated tests**, training/serving parity verified to 1e-9, and fault isolation for malformed records
+- Served real-time fraud scoring via FastAPI + PostgreSQL audit logging at **29 ms p50 latency** (63 req/s per instance), with **139 automated tests**, training/serving parity verified to 1e-9, and fault isolation for malformed records
 
 ## Week-by-week (flexible)
 
@@ -292,3 +292,4 @@ Compare three approaches on the same test sets:
 | 2026-09-30 | 5 | Narrow feature path + cached encoder + POLARS_MAX_THREADS=1 + 4 workers | p50 29 ms / p95 93 ms (1 client); 62.9 req/s at 8 clients; flagged p50 450 ms | In-network client; from Windows host +45 ms (Docker port forwarding). 0 errors / 4,000 |
 | 2026-09-30 | 5 | Fresh copy of repo + raw data → `docker compose run train/seed`, `up` | Same model version lgbm-5697035084 trained in Linux Docker as on Windows (bit-identical); API healthy | 10.5 min training; seeding 590,540 rows in 4 s |
 | 2026-09-30 | 6 | Demo run surfaced a bug: Gemini timeout set to 5 s (minimum 10 s); every uncached /merchant call had silently fallen back to TF-IDF | Fixed timeout; /health now reports last hour's merchant answers by method from the audit log | Fallbacks need monitoring, or they hide outages |
+| 2026-10-01 | 6 | Web UI at / (plain HTML/JS client of the public API; WebGL contour hero) + `/decisions`, `/samples` | Scores, flags, reasons, 422s, merchant answers and live audit verified in browser at desktop and 375 px | Samples are test-set rows, kept in gitignored artifacts/ |

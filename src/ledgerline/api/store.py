@@ -64,6 +64,18 @@ COLUMNS = [
     "p_emaildomain",
 ]
 TO_FRAME = dict(zip(COLUMNS, HISTORY_SCHEMA, strict=True))
+# What /decisions returns: the decision and its provenance, not the full input.
+DECISION_FIELDS = [
+    "created_at",
+    "endpoint",
+    "transaction_id",
+    "score",
+    "threshold",
+    "flagged",
+    "model_version",
+    "input_hash",
+    "output",
+]
 
 
 def input_hash(payload: dict) -> str:
@@ -91,6 +103,7 @@ class Store(Protocol):
     def record(self, decision: dict) -> None: ...
     def healthy(self) -> bool: ...
     def merchant_methods(self, since_minutes: int) -> dict[str, int]: ...
+    def recent_decisions(self, limit: int) -> list[dict]: ...
 
 
 class MemoryStore:
@@ -117,6 +130,11 @@ class MemoryStore:
 
     def healthy(self) -> bool:
         return not self.fail_writes
+
+    def recent_decisions(self, limit: int) -> list[dict]:
+        with self._lock:
+            rows = self.decisions[-limit:][::-1]
+        return [{k: d.get(k) for k in DECISION_FIELDS} for d in rows]
 
     def merchant_methods(self, since_minutes: int) -> dict[str, int]:
         cutoff = datetime.now(UTC) - timedelta(minutes=since_minutes)
@@ -182,6 +200,14 @@ class PostgresStore:
             return True
         except Exception:
             return False
+
+    def recent_decisions(self, limit: int) -> list[dict]:
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                f"SELECT {', '.join(DECISION_FIELDS)} FROM decisions ORDER BY id DESC LIMIT %s",
+                (limit,),
+            ).fetchall()
+        return [dict(zip(DECISION_FIELDS, row, strict=True)) for row in rows]
 
     def merchant_methods(self, since_minutes: int) -> dict[str, int]:
         with self.pool.connection() as conn:

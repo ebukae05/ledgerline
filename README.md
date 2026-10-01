@@ -10,7 +10,7 @@ Scores card transactions for fraud, turns messy bank descriptors into clean merc
 | **Merchant categories** | **92% accuracy on merchants never seen in training**, 86% on my own bank transactions, $0.02 per 1,000 | 60% for TF-IDF, 51% for rules |
 | **Serving** | **29 ms p50**, 63 requests/s per instance, every decision audited | API scores match offline evaluation to within 1e-9 |
 
-Built on the [IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection) data (590,540 real e-commerce transactions, 3.5% fraud) and [a synthetic bank-descriptor dataset](https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2) checked against my own Bank of America transactions. 135 tests; CI runs lint, tests against a real Postgres, and a Docker build on every push.
+Built on the [IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection) data (590,540 real e-commerce transactions, 3.5% fraud) and [a synthetic bank-descriptor dataset](https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2) checked against my own Bank of America transactions. 139 tests; CI runs lint, tests against a real Postgres, and a Docker build on every push.
 
 **Contents:** [Architecture](#architecture) · [Fraud model](#fraud-model) · [Merchant categorization](#merchant-categorization) · [API](#api) · [How I validated this](#how-i-validated-this) · [Limitations and next steps](#limitations-and-next-steps) · [Run it](#run-it) · [Development](#development)
 
@@ -146,12 +146,15 @@ Raw descriptors like `[debit] PAYPAL *DATACAMP JYF7455M6J` → one of 17 categor
 
 ## API
 
+**Web UI at `http://localhost:8000`:** score real test-set transactions (normal, known fraud, a fraud the model misses, a broken request), categorize any bank descriptor, and watch the audit trail fill in live. It's a plain HTML/JS client of the same public endpoints below, with no extra privileges.
+
 | Endpoint | In | Out |
 |---|---|---|
 | `POST /score` | one transaction (IEEE-CIS fields) | fraud score, flag decision, threshold, model version, top 3 reasons when flagged |
 | `POST /score/batch` | up to 1,000 transactions | results for valid records; bad records listed by index with their errors |
 | `POST /merchant` | raw descriptor + debit/credit | category, confidence, and which model answered (`llm` or `tfidf`) |
 | `GET /health` | | model version, database reachable (503 if not), last hour's merchant answers by method |
+| `GET /decisions` | `limit` (1–100) | latest audit records, newest first (decision and provenance, not the full input) |
 
 Interactive docs at `http://localhost:8000/docs`. `python -m ledgerline.api.demo` walks through every endpoint with real test-set transactions.
 
@@ -217,6 +220,7 @@ p50 went from 156 ms to 29 ms after profiling: computing history features on the
 - **Shadow mode** for new model versions (score alongside the live model without affecting decisions) would be the safe way to roll out a retrain.
 - **Reasons are slow** (~0.45 s). A smaller model, or approximating contributions, would cut flagged-request latency.
 - **The real merchant set is small** and AI-drafted (reviewed by me). A larger, independently labeled set would make the real-world number stronger.
+- **`/decisions` and the UI have no authentication.** Fine on localhost; a real deployment would put the audit log behind auth, since it reveals what was scored.
 - **Descriptors sent to Gemini** leave the machine. A bank would use a privately hosted model or a contract that rules out training on its data.
 
 ## Run it
@@ -224,9 +228,9 @@ p50 went from 156 ms to 29 ms after profiling: computing history features on the
 Needs Docker, plus the [IEEE-CIS data](https://www.kaggle.com/competitions/ieee-fraud-detection/data) (`train_transaction.csv`, `train_identity.csv` in `data/raw/`; accept the competition rules first) and [`transactions-synthetic.csv`](https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2) in `data/raw/merchants/`.
 
 ```bash
-docker compose run --rm train   # trains the fraud and merchant models (~15 min)
+docker compose run --rm train   # trains both models + picks UI example transactions (~15 min)
 docker compose run --rm seed    # loads card history into Postgres
-docker compose up -d            # API on http://localhost:8000
+docker compose up -d            # UI + API on http://localhost:8000
 ```
 
 Optional: copy `.env.example` to `.env` and add `GEMINI_API_KEY` to enable the LLM merchant classifier.

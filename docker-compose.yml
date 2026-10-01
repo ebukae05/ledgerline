@@ -1,5 +1,5 @@
 # docker compose up                          API + Postgres
-# docker compose run --rm train              train both models (needs data/raw)
+# docker compose run --rm train              train both models + UI samples (needs data/raw)
 # docker compose run --rm seed               load card history into Postgres
 
 x-app: &app
@@ -55,7 +55,7 @@ services:
   train:
     <<: *app
     profiles: ["tools"]
-    command: sh -c "python -m ledgerline.train && python -m ledgerline.merchants.train_tfidf"
+    command: sh -c "python -m ledgerline.train && python -m ledgerline.merchants.train_tfidf && python -m ledgerline.api.samples"
 
   seed:
     <<: *app
