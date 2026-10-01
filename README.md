@@ -2,7 +2,7 @@
 
 Scores card transactions for fraud, turns messy bank descriptors into clean merchant categories, and serves both through a tested API, with every claim backed by a measured number.
 
-> Work in progress. See [PLAN.md](PLAN.md) for the roadmap.
+> See [PLAN.md](PLAN.md) for the roadmap and the full results log.
 
 ## Setup
 
@@ -125,13 +125,80 @@ Results in [`reports/merchants_test.json`](reports/merchants_test.json); validat
 - **Remaining LLM errors are mostly label conventions**, not ignorance: Shopping ↔ Groceries (Costco, Walmart), Personal Care ↔ Shopping, Education ↔ Subscription (an online course is both).
 - **Cost** is measured from token counts on batched calls (40 descriptions per request) at the Sep 2026 list price. Latency is a single-description request, i.e. what a live API call would see.
 
+## API
+
+FastAPI service backed by Postgres, run with Docker Compose. Interactive docs at `http://localhost:8000/docs`.
+
+| Endpoint | In | Out |
+|---|---|---|
+| `POST /score` | one transaction (IEEE-CIS fields) | fraud score, flag decision, threshold, model version, top 3 reasons when flagged |
+| `POST /score/batch` | up to 1,000 transactions | results for valid records; bad records listed by index with their errors, never failing the batch |
+| `POST /merchant` | raw descriptor + debit/credit | category, confidence, and which model answered (`llm` or `tfidf`) |
+| `GET /health` | | model loaded, model version, database reachable (503 if not) |
+
+```bash
+curl -s localhost:8000/merchant -H "content-type: application/json"   -d '{"description": "PAYPAL *DATACAMP JYF7455M6J"}'
+# {"category":"Education","confidence":null,"method":"llm"}
+```
+
+A flagged transaction comes back with its reasons, ranked by how much each feature pushed the score up:
+
+```json
+{"transaction_id": 3494377, "score": 0.888, "flagged": true, "threshold": 0.0268,
+ "model_version": "lgbm-5697035084",
+ "reasons": [
+   {"feature": "C13", "value": 0.0, "contribution": 2.10,
+    "text": "C13 = 0 (count, e.g. addresses linked to the card; exact meaning masked by the data provider)"},
+   {"feature": "id_31", "value": "chrome generic", "contribution": 2.03, "text": "browser: chrome generic"},
+   ...]}
+```
+
+### Design decisions
+
+- **Same feature code in training and serving.** The API fetches the card's earlier transactions from Postgres and runs the same `history_features` / `basic_features` functions used in training. A parity test scores 300 real test-set transactions through the HTTP API (history read from Postgres) and checks every score matches the offline evaluation pipeline to within 1e-9. A second parity test on synthetic data runs in CI.
+- **Bad input never causes a 500.** The transaction schema is generated from the model's feature list: missing required fields, wrong types, non-positive amounts, unknown product codes or card types, and unknown fields (typos) all return a 422 that names the field. In a batch, a bad record is reported by index and the rest are scored.
+- **Every decision is audited.** Each `/score` and `/merchant` call writes the input, its SHA-256 hash, the output, score, threshold, flag, model version and timestamp to Postgres. If that write fails the API returns 503: no decision leaves without a record.
+- **Pinned, versioned models.** The model version is a hash of its trees. `MODEL_VERSION` pins the version to serve (default: latest trained), and it's logged with every decision.
+- **Refuses to start broken.** A missing model, unreachable database or invalid threshold stops startup with a message saying what to fix.
+- **Threshold is config.** `FLAG_THRESHOLD` changes the flag cutoff without retraining.
+- **Reasons only for flags.** Exact per-feature contributions (TreeSHAP over 2,405 trees) cost ~0.45 s, so they're computed for flagged transactions (≈3.5% of traffic), which is where a bank owes an explanation. The strongest signals in this dataset are columns the provider masked (C, D, M, V), so reasons for those name the feature family rather than an exact meaning; with a bank's own data every feature would have a real name.
+- **The merchant LLM can fail safely.** Gemini answers when available; on a timeout, quota error or missing key, `/merchant` falls back to TF-IDF and says so in `method`.
+
+### Performance
+
+Load test with 1,000 real test-set transactions per level (`python -m ledgerline.api.loadtest`), Docker Compose on an 8-CPU Windows laptop (WSL2), 4 workers, client and server sharing the CPUs:
+
+| Concurrent clients | Requests/s | p50 | p95 | Flagged (with reasons) p50 |
+|---|---|---|---|---|
+| 1 | 19.9 | **29 ms** | 93 ms | 450 ms |
+| 4 | 44.8 | 54 ms | 161 ms | 794 ms |
+| 8 | **62.9** | 81 ms | 233 ms | 1.09 s |
+| 16 | 67.1 | 177 ms | 457 ms | 1.43 s |
+
+Zero errors in 4,000 requests. Measured from inside the Docker network ([`reports/loadtest.json`](reports/loadtest.json)); from the Windows host, Docker Desktop's port forwarding adds ~45 ms per request ([`reports/loadtest_from_windows_host.json`](reports/loadtest_from_windows_host.json)).
+
+What moved the numbers: p50 went from 156 ms to 29 ms by (1) computing history features on just the 8 columns they read instead of all 434, (2) caching the category lookup tables, and (3) setting `POLARS_MAX_THREADS=1` in the API container, since Polars' thread pool cost more than it saved on per-request frames (107 ms → 13 ms for feature computation). Each change was re-checked against the parity test.
+
+## Run it
+
+Needs Docker and the two datasets (see [Data](#data); merchant data goes in `data/raw/merchants/`).
+
+```bash
+docker compose run --rm train   # trains the fraud and merchant models (~15 min)
+docker compose run --rm seed    # loads card history into Postgres
+docker compose up -d            # API on http://localhost:8000
+```
+
+Optional: copy `.env.example` to `.env` and add `GEMINI_API_KEY` to enable the LLM merchant classifier.
+
 ## How I validated this
 
 - **Time-based split, no shuffling.** Train days 1–120, validation 120–152, test 152–182. A test proves every validation/test transaction is strictly later than every training one.
 - **No feature sees the future.** History features only use transactions with an earlier timestamp for the same card. Tests delete all data after a cutoff and check that no earlier feature changes, and edit a later transaction and check that nothing earlier moves.
 - **The card+address key.** The data has no customer ID. `card1` + `addr1` + first-use day (`day − D1`, since D1 counts days since the card's first transaction) stands in for one; only 3,112 of its 217,850 groups mix fraud and legit. Past fraud labels are never used as features.
 - **Test set touched once.** `python -m ledgerline.evaluate` refuses to run a second time without `--force` and records the model version it scored.
-- **Reproducible.** Pinned library versions, fixed seeds, deterministic LightGBM. Retraining gives a bit-identical model; the model version is a hash of its trees.
+- **Reproducible across machines.** Pinned library versions, fixed seeds, deterministic LightGBM; the model version is a hash of its trees. Training from a fresh copy of the repo inside Linux Docker produced the same `lgbm-5697035084` as training on Windows: bit-identical trees, threshold and metrics. (The TF-IDF merchant model's version is a hash of its saved file, which differs across platforms, so only the fraud model is verified identical.)
+- **Setup steps verified on a fresh copy.** Code from git plus the raw data, then `docker compose run --rm train`, `run --rm seed`, `up -d`: healthy API, working endpoints, 422s for bad input.
 
 ## Reproduce
 
@@ -144,6 +211,8 @@ python -m ledgerline.evaluate      # test set, once
 python -m ledgerline.merchants.benchmark          # merchant approaches, validation
 python -m ledgerline.merchants.benchmark --test   # synthetic test set, once
 python -m ledgerline.merchants.benchmark --real   # your labeled transactions, once
+
+pytest                                             # 133 tests; DB tests need TEST_DATABASE_URL
 ```
 
 The merchant LLM needs `GEMINI_API_KEY` in `.env` (see `.env.example`). Answers are cached in `data/processed/llm_cache/`, so re-runs cost nothing.

@@ -12,6 +12,7 @@ Needs GEMINI_API_KEY in .env. GEMINI_MODEL overrides the default model.
 import hashlib
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -89,8 +90,18 @@ class Usage:
 
 
 class GeminiClassifier:
-    def __init__(self, model: str | None = None, cache_dir: Path = CACHE_DIR, client=None):
-        self.model = model or os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
+    def __init__(
+        self,
+        model: str | None = None,
+        cache_dir: Path = CACHE_DIR,
+        client=None,
+        max_retries: int = MAX_RETRIES,
+        timeout_ms: int | None = None,
+    ):
+        self.model = model or os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
+        self.max_retries = max_retries
+        self.timeout_ms = timeout_ms
+        self._lock = threading.Lock()
         if self.model not in PRICES:
             raise ValueError(f"no price on file for {self.model}; add it to PRICES")
         self._client = client
@@ -117,7 +128,8 @@ class GeminiClassifier:
             key = os.environ.get("GEMINI_API_KEY")
             if not key:
                 raise RuntimeError("GEMINI_API_KEY is not set. Add it to .env (see .env.example).")
-            self._client = genai.Client(api_key=key)
+            options = genai.types.HttpOptions(timeout=self.timeout_ms) if self.timeout_ms else None
+            self._client = genai.Client(api_key=key, http_options=options)
         return self._client
 
     def _key(self, description: str) -> str:
@@ -134,7 +146,7 @@ class GeminiClassifier:
             response_mime_type="application/json",
             response_schema=_schema(len(descriptions)),
         )
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(self.max_retries):
             try:
                 start = time.perf_counter()
                 response = self.client.models.generate_content(
@@ -143,7 +155,7 @@ class GeminiClassifier:
                 elapsed = time.perf_counter() - start
                 break
             except Exception as error:  # rate limits and transient server errors
-                if attempt == MAX_RETRIES - 1:
+                if attempt == self.max_retries - 1:
                     raise
                 print(f"  retrying after {type(error).__name__}", flush=True)
                 time.sleep(2**attempt * 5)
@@ -165,10 +177,11 @@ class GeminiClassifier:
 
     def _store(self, description: str, category: str) -> None:
         key = self._key(description)
-        self.cache[key] = category
-        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.cache_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"key": key, "category": category}) + "\n")
+        with self._lock:  # the API calls this from several threads
+            self.cache[key] = category
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.cache_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"key": key, "category": category}) + "\n")
 
     def predict(self, descriptions: list[str], batch_size: int = BATCH_SIZE) -> list[str | None]:
         """Category per description; None only if the model never gave a valid answer."""

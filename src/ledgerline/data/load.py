@@ -4,11 +4,14 @@ The raw CSVs are ~700 MB and slow to parse, so the joined result is cached as
 Parquet in data/processed/. Delete the cache (or pass refresh=True) to rebuild.
 """
 
+import os
 from pathlib import Path
 
 import polars as pl
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# Repo root when running from source; set PROJECT_ROOT when the package is
+# installed elsewhere (e.g. in the Docker image).
+PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT") or Path(__file__).resolve().parents[3])
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 

@@ -1,0 +1,66 @@
+# docker compose up                          API + Postgres
+# docker compose run --rm train              train both models (needs data/raw)
+# docker compose run --rm seed               load card history into Postgres
+
+x-app: &app
+  build: .
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgresql://ledgerline:ledgerline@db:5432/ledgerline
+    PROJECT_ROOT: /app
+  volumes:
+    - ./artifacts:/app/artifacts
+    - ./data:/app/data
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ledgerline
+      POSTGRES_PASSWORD: ledgerline
+      POSTGRES_DB: ledgerline
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledgerline"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *app
+    environment:
+      DATABASE_URL: postgresql://ledgerline:ledgerline@db:5432/ledgerline
+      PROJECT_ROOT: /app
+      WORKERS: ${WORKERS:-4}
+      # Requests work on tiny frames; Polars' thread pool costs more than it
+      # saves there (107 ms -> 13 ms per request measured in this container).
+      POLARS_MAX_THREADS: "1"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  train:
+    <<: *app
+    profiles: ["tools"]
+    command: sh -c "python -m ledgerline.train && python -m ledgerline.merchants.train_tfidf"
+
+  seed:
+    <<: *app
+    profiles: ["tools"]
+    command: python -m ledgerline.api.seed
+
+volumes:
+  pgdata:

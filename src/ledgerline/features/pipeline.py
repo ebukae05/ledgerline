@@ -49,6 +49,11 @@ class CategoryEncoder:
     """
 
     vocab: dict[str, list[str]] = field(default_factory=dict)
+    # Lookup tables built from vocab on first use, then reused (matters when
+    # the API encodes one row per request).
+    _maps: dict[str, tuple[pl.Series, pl.Series]] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def fit(self, df: pl.DataFrame, columns: list[str]) -> "CategoryEncoder":
         self.vocab = {
@@ -56,17 +61,24 @@ class CategoryEncoder:
             for c in columns
             if df.schema[c] == pl.String
         }
+        self._maps = {}
         return self
+
+    def _map(self, column: str) -> tuple[pl.Series, pl.Series]:
+        if column not in self._maps:
+            values = self.vocab[column]
+            self._maps[column] = (
+                pl.Series(values, dtype=pl.String),
+                pl.Series(range(len(values)), dtype=pl.Int32),
+            )
+        return self._maps[column]
 
     def transform(self, df: pl.DataFrame, columns: list[str]) -> np.ndarray:
         exprs = []
         for c in columns:
             if c in self.vocab:
-                mapping = pl.DataFrame(
-                    {c: self.vocab[c], "code": range(len(self.vocab[c]))},
-                    schema={c: pl.String, "code": pl.Int32},
-                )
-                exprs.append(pl.col(c).replace_strict(mapping[c], mapping["code"], default=None))
+                old, new = self._map(c)
+                exprs.append(pl.col(c).replace_strict(old, new, default=None))
             else:
                 exprs.append(pl.col(c).cast(pl.Float32))
         return df.select(exprs).to_numpy().astype(np.float32)

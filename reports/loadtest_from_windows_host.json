@@ -1,0 +1,68 @@
+{
+  "measured_at": "2026-10-01T02:24:26+00:00",
+  "url": "http://localhost:8000",
+  "model_version": "lgbm-5697035084",
+  "note": "docker compose on Windows/WSL2 (8 CPUs), 4 uvicorn workers, POLARS_MAX_THREADS=1",
+  "machine": {
+    "cpus": 8,
+    "platform": "Windows-11-10.0.26200-SP0"
+  },
+  "levels": [
+    {
+      "concurrency": 1,
+      "requests": 1000,
+      "errors": 0,
+      "requests_per_second": 12.334131022291547,
+      "p50_ms": 74.35954999527894,
+      "p95_ms": 123.93779997655655,
+      "p99_ms": 451.9767220300855,
+      "unflagged_p50_ms": 74.02369996998459,
+      "unflagged_p95_ms": 107.93283999664708,
+      "flagged_count": 35,
+      "flagged_p50_ms": 447.8448000154458,
+      "flagged_p95_ms": 493.4344600071199
+    },
+    {
+      "concurrency": 4,
+      "requests": 1000,
+      "errors": 0,
+      "requests_per_second": 42.40081828486204,
+      "p50_ms": 66.80615001823753,
+      "p95_ms": 177.5694550015032,
+      "p99_ms": 790.9781919879605,
+      "unflagged_p50_ms": 66.05330004822463,
+      "unflagged_p95_ms": 145.49230001866815,
+      "flagged_count": 35,
+      "flagged_p50_ms": 759.9999999511056,
+      "flagged_p95_ms": 873.3644099789672
+    },
+    {
+      "concurrency": 8,
+      "requests": 1000,
+      "errors": 0,
+      "requests_per_second": 54.769287061959346,
+      "p50_ms": 109.39634998794645,
+      "p95_ms": 277.768885003752,
+      "p99_ms": 1063.2787359744543,
+      "unflagged_p50_ms": 107.97519999323413,
+      "unflagged_p95_ms": 227.36321998527274,
+      "flagged_count": 35,
+      "flagged_p50_ms": 1012.0809000218287,
+      "flagged_p95_ms": 1140.316940000048
+    },
+    {
+      "concurrency": 16,
+      "requests": 1000,
+      "errors": 0,
+      "requests_per_second": 62.441233043287966,
+      "p50_ms": 211.9478000095114,
+      "p95_ms": 493.3239449950632,
+      "p99_ms": 1336.8153499939945,
+      "unflagged_p50_ms": 209.4476000056602,
+      "unflagged_p95_ms": 402.41653997218236,
+      "flagged_count": 35,
+      "flagged_p50_ms": 1276.3808000017889,
+      "flagged_p95_ms": 1497.5446199881844
+    }
+  ]
+}
