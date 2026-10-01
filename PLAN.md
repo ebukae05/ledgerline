@@ -285,3 +285,6 @@ Compare three approaches on the same test sets:
 | 2026-09-30 | 3 | Class weighting (scale_pos_weight) on full features (val) | PR-AUC 0.643 → 0.652, recall @ 1% FPR 55.4% → 57.3% | Single seed |
 | 2026-09-30 | 3 | Ablation on basic+history, 3 seeds (val) | Card+address key −0.022, time since prev −0.009, velocity −0.007, device/email seen −0.001 | Importance ≠ ablation: card_n_prior top by gain but cheap to remove |
 | 2026-09-30 | 3 | **TEST, once.** Model lgbm-5697035084 | PR-AUC 0.561, recall @ 1% FPR 48.4% (rules 2.6%, LR 11.3%), precision @ top 1% 89.5% | Val threshold gave 1.44% FPR on test (drift); caught 52% of fraud, 45% of fraud dollars |
+| 2026-09-30 | 4 | Merchant split (2,142 estimated merchants) vs random split, TF-IDF | Random split 99.8% accuracy vs merchant split 62.0% (val) | Random split = memorizing merchant names |
+| 2026-09-30 | 4 | Rules / TF-IDF (C=3 on val) / Gemini 3.1 Flash-Lite / cascade, val sample of 1,000 | Accuracy 51.0% / 62.7% / 90.6% / 91.7% (threshold 0.95) | LLM $0.025 per 1k; TF-IDF ≥90% confident = 94% right |
+| 2026-09-30 | 4 | **Synthetic TEST, once** (10,157 rows, unseen merchants) | Rules 51.2%, TF-IDF 60.0%, Gemini 92.3% (macro-F1 0.927), cascade 92.5% | Gemini $0.020 per 1k, p50 699 ms; TF-IDF 0.45 ms. Real-set run pending |

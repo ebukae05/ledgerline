@@ -1,0 +1,217 @@
+{
+  "evaluated_at": "2026-10-01T00:16:21+00:00",
+  "llm_model": "gemini-3.1-flash-lite",
+  "tfidf_c": 3.0,
+  "cascade_threshold": 0.95,
+  "rules": {
+    "n": 10157,
+    "accuracy": 0.5116668307571133,
+    "macro_f1": 0.5207171969125328,
+    "f1_by_category": {
+      "Education": 0.2127255460588794,
+      "Entertainment": 0.08299595141700405,
+      "Fees": 1.0,
+      "Groceries": 0.5227492739593417,
+      "Healthcare": 0.5734639358860196,
+      "Income": 0.7142857142857143,
+      "Insurance": 0.6216216216216216,
+      "Mortgage": 0.9687836383207751,
+      "Personal Care": 0.9769658459094519,
+      "Rent": 0.964,
+      "Restaurants": 0.4148148148148148,
+      "Shopping": 0.2391424875254112,
+      "Subscription": 0.18791946308724833,
+      "Transfer": 0.1936842105263158,
+      "Transportation": 0.20662768031189083,
+      "Travel": 0.37375745526838966,
+      "Utilities": 0.5986547085201793
+    },
+    "top_confusions": [
+      {
+        "true": "Entertainment",
+        "predicted": "Shopping",
+        "count": 630
+      },
+      {
+        "true": "Education",
+        "predicted": "Shopping",
+        "count": 599
+      },
+      {
+        "true": "Subscription",
+        "predicted": "Shopping",
+        "count": 458
+      },
+      {
+        "true": "Groceries",
+        "predicted": "Shopping",
+        "count": 368
+      },
+      {
+        "true": "Transportation",
+        "predicted": "Shopping",
+        "count": 330
+      }
+    ],
+    "latency_p50_ms": 0.010100018698722124
+  },
+  "tfidf": {
+    "n": 10157,
+    "accuracy": 0.599684946342424,
+    "macro_f1": 0.607281296606392,
+    "f1_by_category": {
+      "Education": 0.4724104549854792,
+      "Entertainment": 0.474036850921273,
+      "Fees": 0.8724894908921065,
+      "Groceries": 0.5979843225083986,
+      "Healthcare": 0.5717171717171717,
+      "Income": 0.8854368932038835,
+      "Insurance": 0.6107784431137725,
+      "Mortgage": 0.991701244813278,
+      "Personal Care": 0.2969325153374233,
+      "Rent": 0.9980657640232108,
+      "Restaurants": 0.5,
+      "Shopping": 0.33116883116883117,
+      "Subscription": 0.5559748427672956,
+      "Transfer": 0.6923076923076923,
+      "Transportation": 0.3308970099667774,
+      "Travel": 0.4207920792079208,
+      "Utilities": 0.7210884353741497
+    },
+    "top_confusions": [
+      {
+        "true": "Shopping",
+        "predicted": "Groceries",
+        "count": 293
+      },
+      {
+        "true": "Personal Care",
+        "predicted": "Transportation",
+        "count": 217
+      },
+      {
+        "true": "Education",
+        "predicted": "Transportation",
+        "count": 184
+      },
+      {
+        "true": "Entertainment",
+        "predicted": "Transportation",
+        "count": 136
+      },
+      {
+        "true": "Fees",
+        "predicted": "Transfer",
+        "count": 133
+      }
+    ],
+    "latency_p50_ms": 0.4461000207811594
+  },
+  "llm": {
+    "n": 10157,
+    "accuracy": 0.9232056709658364,
+    "macro_f1": 0.9268170963555886,
+    "f1_by_category": {
+      "Education": 0.9316522893165229,
+      "Entertainment": 0.939863608183509,
+      "Fees": 0.9903239377366428,
+      "Groceries": 0.8903394255874674,
+      "Healthcare": 0.9427450980392157,
+      "Income": 0.8382352941176471,
+      "Insurance": 0.9766949152542372,
+      "Mortgage": 0.9655172413793104,
+      "Personal Care": 0.9043183742591024,
+      "Rent": 0.9922178988326849,
+      "Restaurants": 0.9581920903954803,
+      "Shopping": 0.7334273624823695,
+      "Subscription": 0.8584980237154151,
+      "Transfer": 0.8949152542372881,
+      "Transportation": 0.9898762654668166,
+      "Travel": 0.978776529338327,
+      "Utilities": 0.9702970297029703
+    },
+    "top_confusions": [
+      {
+        "true": "Shopping",
+        "predicted": "Groceries",
+        "count": 152
+      },
+      {
+        "true": "Personal Care",
+        "predicted": "Shopping",
+        "count": 97
+      },
+      {
+        "true": "Education",
+        "predicted": "Subscription",
+        "count": 47
+      },
+      {
+        "true": "Healthcare",
+        "predicted": "Shopping",
+        "count": 45
+      },
+      {
+        "true": "Entertainment",
+        "predicted": "Subscription",
+        "count": 40
+      }
+    ],
+    "cost_per_1k_usd": 0.02017128581273998,
+    "latency_p50_ms": 698.540299985325
+  },
+  "cascade": {
+    "n": 10157,
+    "accuracy": 0.9245840307177317,
+    "macro_f1": 0.9282735130167744,
+    "f1_by_category": {
+      "Education": 0.9316522893165229,
+      "Entertainment": 0.939863608183509,
+      "Fees": 0.9903239377366428,
+      "Groceries": 0.8910632746249184,
+      "Healthcare": 0.9427450980392157,
+      "Income": 0.8460111317254174,
+      "Insurance": 0.9745222929936306,
+      "Mortgage": 0.9666307857911733,
+      "Personal Care": 0.9043183742591024,
+      "Rent": 0.9922178988326849,
+      "Restaurants": 0.9592760180995475,
+      "Shopping": 0.7360226468506723,
+      "Subscription": 0.8634222919937206,
+      "Transfer": 0.9023569023569024,
+      "Transportation": 0.9898762654668166,
+      "Travel": 0.9800498753117207,
+      "Utilities": 0.9702970297029703
+    },
+    "top_confusions": [
+      {
+        "true": "Shopping",
+        "predicted": "Groceries",
+        "count": 152
+      },
+      {
+        "true": "Personal Care",
+        "predicted": "Shopping",
+        "count": 97
+      },
+      {
+        "true": "Education",
+        "predicted": "Subscription",
+        "count": 47
+      },
+      {
+        "true": "Healthcare",
+        "predicted": "Shopping",
+        "count": 45
+      },
+      {
+        "true": "Entertainment",
+        "predicted": "Subscription",
+        "count": 40
+      }
+    ],
+    "threshold": 0.95,
+    "share_sent_to_llm": 0.8527124150831938,
+    "cost_per_1k_usd": 0.017200305840714872
+  }
+}

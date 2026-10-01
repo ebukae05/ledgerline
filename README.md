@@ -85,6 +85,32 @@ Each group removed from the basic + history model, 3 seeds each:
 
 The card+address key is the most valuable single idea. LightGBM's own importance ranks `card_n_prior` first, yet removing it costs little: correlated features stand in for it. Importance shows what a model *used*; ablation shows what it *needed*.
 
+## Merchant categorization
+
+Raw descriptors like `[debit] PAYPAL *DATACAMP JYF7455M6J` → one of 17 categories. Developed on [DoDataThings/us-bank-transaction-categories-v2](https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2) (68,000 synthetic rows from ~500 real merchant names, MIT).
+
+**Headline: on merchants it had never seen, Gemini 3.1 Flash-Lite reached 92.3% accuracy at $0.02 per 1,000 descriptions, vs 60.0% for TF-IDF and 51.2% for hand-written rules.**
+
+### Test set (10,157 descriptions, all from unseen merchants, evaluated once)
+
+| Approach | Accuracy | Macro-F1 | Cost per 1k | Latency p50 |
+|---|---|---|---|---|
+| Rules (regex cleanup + 17 keyword rules) | 51.2% | 0.521 | $0 | 0.01 ms |
+| TF-IDF char n-grams + logistic regression | 60.0% | 0.607 | $0 | 0.45 ms |
+| **Gemini 3.1 Flash-Lite**, structured JSON output | **92.3%** | **0.927** | **$0.020** | 699 ms |
+| Cascade: TF-IDF when ≥95% confident, else Gemini | 92.5% | 0.928 | $0.017 | — |
+| Your real transactions | _pending_ | | | |
+
+Results in [`reports/merchants_test.json`](reports/merchants_test.json); validation and tuning in [`reports/merchants_val.json`](reports/merchants_val.json). Reproduce with `python -m ledgerline.merchants.benchmark` (validation) then `--test` (once).
+
+### What the numbers say
+
+- **Split by merchant, or the score is fake.** A third of rows are exact duplicates and only ~500 merchants exist. With a random split, TF-IDF scores **99.8%** by memorizing merchant names. Split so every test merchant is unseen, the same model scores **60%**. Merchants are estimated from the text (first word specific to ≤2 categories), giving 2,142 groups and zero letters-only overlap between train and test.
+- **The LLM wins because it knows merchants.** TF-IDF's mistakes are brands it's never seen: `BRILLIANT.ORG` and `DATACAMP` → Restaurants, `PRINCIPAL PMT` → Travel. No character pattern says DataCamp is education; world knowledge does.
+- **The cascade barely pays here.** TF-IDF's confidence is well calibrated (≥90% confident: right 94% of the time; <50%: right 29%), so routing only unsure rows to the LLM works. But at $0.02 per 1,000, the LLM is already cheap, and matching its accuracy still sends 85% of rows to it. On validation, a 0.8 threshold sent 62% for 0.3 points less accuracy. The cascade matters when LLM cost or latency is the constraint, not here.
+- **Remaining LLM errors are mostly label conventions**, not ignorance: Shopping ↔ Groceries (Costco, Walmart), Personal Care ↔ Shopping, Education ↔ Subscription (an online course is both).
+- **Cost** is measured from token counts on batched calls (40 descriptions per request) at the Sep 2026 list price. Latency is a single-description request, i.e. what a live API call would see.
+
 ## How I validated this
 
 - **Time-based split, no shuffling.** Train days 1–120, validation 120–152, test 152–182. A test proves every validation/test transaction is strictly later than every training one.
@@ -100,4 +126,10 @@ python -m ledgerline.baselines     # rules + logistic regression, validation
 python -m ledgerline.experiments   # all model variants + ablation (~1 hour)
 python -m ledgerline.train         # final model -> artifacts/models/<version>/
 python -m ledgerline.evaluate      # test set, once
+
+python -m ledgerline.merchants.benchmark          # merchant approaches, validation
+python -m ledgerline.merchants.benchmark --test   # synthetic test set, once
+python -m ledgerline.merchants.benchmark --real   # your labeled transactions, once
 ```
+
+The merchant LLM needs `GEMINI_API_KEY` in `.env` (see `.env.example`). Answers are cached in `data/processed/llm_cache/`, so re-runs cost nothing.

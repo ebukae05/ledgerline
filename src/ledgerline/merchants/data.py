@@ -76,7 +76,8 @@ def load_private(path: Path = PRIVATE_PATH) -> pl.DataFrame:
     """
     if not path.exists():
         raise FileNotFoundError(
-            f"{path} not found. Copy data/private_template.csv there and label your transactions."
+            f"{path} not found. Copy templates/my_transactions_template.csv there, "
+            "replace the example rows with your transactions, and label each one."
         )
     df = pl.read_csv(path).filter(pl.col("category").is_not_null())
     unknown = set(df["category"].unique()) - set(CATEGORIES)
